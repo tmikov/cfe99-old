@@ -1,0 +1,33 @@
+Microsoft (R) 32-bit C/C++ Optimizing Compiler Version 12.00.8804 for 80x86
+Copyright (C) Microsoft Corp 1984-1998. All rights reserved.
+
+decl5.c
+decl5.c(7) : error: 'eb': type is incompatible with previous declaration
+     decl5.c(4) : See previous declaration of 'eb'
+decl5.c(11) : error: 'A': type is incompatible with previous declaration
+     decl5.c(10) : See previous declaration of 'A'
+decl5.c(14) : warning: 'INT': already declared in this scope
+     decl5.c(13) : See previous declaration of 'INT'
+decl5.c(15) : warning: 'INT': already declared in this scope
+     decl5.c(14) : See previous declaration of 'INT'
+decl5.c(15) : error: 'INT': type is incompatible with previous declaration
+     decl5.c(14) : See previous declaration of 'INT'
+decl5.c(18) : error: 'c': type is incompatible with previous declaration
+     decl5.c(17) : See previous declaration of 'c'
+decl5.c(19) : error: 'b': type is incompatible with previous declaration
+     decl5.c(17) : See previous declaration of 'b'
+decl5.c(26) : error: 'func1': type is incompatible with previous declaration
+     decl5.c(23) : See previous declaration of 'func1'
+decl5.c(34) : error: 'func2': type is incompatible with previous declaration
+     decl5.c(31) : See previous declaration of 'func2'
+decl5.c(38) : error: 'c': is not a parameter
+decl5.c(36) : error: 'b': parameter was not defined
+decl5.c(44) : error: 'func4': mixing old-style and new-style function declaration
+decl5.c(48) : error: 'func5': does not have function type in function definition
+decl5.c(54) : error: 'func6': function type in function definition cannot come from a typedef
+decl5.c(60) : error: 'b': already declared in this scope
+     decl5.c(57) : See previous declaration of 'b'
+decl5.c(68) : error: 'a': already declared in this scope
+     decl5.c(65) : See previous declaration of 'a'
+decl5.c(68) : error: 'b': already declared in this scope
+     decl5.c(66) : See previous declaration of 'b'

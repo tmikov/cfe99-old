@@ -1,0 +1,11 @@
+June 6 1999 :
+
+- EllipsisSym to represent the "..." in function declarations.
+- Declaring new style function parameters (except typecast ones)
+- (void) function header
+- Implemented enum-s (as far as possible without expressions)
+
+- Added bC9X compile option
+- Added keyword _Bool and made it depend on the bC9X option
+- Added some support for the __restrict qualifier. That is: is parsed
+  and preserved, but no checks are made.

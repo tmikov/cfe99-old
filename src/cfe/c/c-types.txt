@@ -1,0 +1,108 @@
+6.2.5 Types
+
+4 There are five standard signed integer types, designated as signed char, short
+int, int, long int, and long long int. (These and other types may be
+designated in several additional ways, as described in 6.7.2.) There may also be
+implementation-defined extended signed integer types.28) The standard and extended
+signed integer types are collectively called signed integer types.29)
+
+10 There are three real floating types, designated as float, double, and long
+double.32) The set of values of the type float is a subset of the set of values of the
+type double; the set of values of the type double is a subset of the set of values of the
+type long double.
+
+11 There are three complex types, designated as float _Complex, double
+_Complex, and long double _Complex.33) The real floating and complex types
+are collectively called the floating types.
+
+12 For each floating type there is a corresponding real type, which is always a real floating
+type. For real floating types, it is the same type. For complex types, it is the type given
+by deleting the keyword _Complex from the type name.
+
+13 Each complex type has the same representation and alignment requirements as an array
+type containing exactly two elements of the corresponding real type; the first element is
+equal to the real part, and the second element to the imaginary part, of the complex
+number.
+
+14 The type char, the signed and unsigned integer types, and the floating types are
+collectively called the basic types. Even if the implementation defines two or more basic
+types to have the same representation, they are nevertheless different types.34)
+
+15 The three types char, signed char, and unsigned char are collectively called
+the character types. The implementation shall define char to have the same range,
+representation, and behavior as either signed char or unsigned char.35)
+
+16 An enumeration comprises a set of named integer constant values. Each distinct
+enumeration constitutes a different enumerated type.
+
+17 The type char, the signed and unsigned integer types, and the enumerated types are
+collectively called integer types. The integer and real floating types are collectively called
+real types.
+
+18 Integer and floating types are collectively called arithmetic types. Each arithmetic type
+belongs to one type domain: the real type domain comprises the real types, the complex
+type domain comprises the complex types.
+
+19 The void type comprises an empty set of values; it is an incomplete type that cannot be
+completed.
+
+20 Any number of derived types can be constructed from the object, function, and
+incomplete types, as follows:
+
+  — An array type describes a contiguously allocated nonempty set of objects with a
+particular member object type, called the element type.36) Array types are
+characterized by their element type and by the number of elements in the array. An
+array type is said to be derived from its element type, and if its element type is T, the
+array type is sometimes called ‘‘array of T’’. The construction of an array type from
+an element type is called ‘‘array type derivation’’.
+
+  — A structure type describes a sequentially allocated nonempty set of member objects
+(and, in certain circumstances, an incomplete array), each of which has an optionally
+specified name and possibly distinct type.
+
+  — A union type describes an overlapping nonempty set of member objects, each of
+which has an optionally specified name and possibly distinct type.
+
+  — A function type describes a function with specified return type. A function type is
+characterized by its return type and the number and types of its parameters. A
+function type is said to be derived from its return type, and if its return type is T, the
+function type is sometimes called ‘‘function returning T’’. The construction of a
+function type from a return type is called ‘‘function type derivation’’.
+
+  — Apointer type may be derived from a function type, an object type, or an incomplete
+type, called the referenced type. A pointer type describes an object whose value
+provides a reference to an entity of the referenced type. A pointer type derived from
+the referenced type T is sometimes called ‘‘pointer to T’’. The construction of a
+pointer type from a referenced type is called ‘‘pointer type derivation’’.
+
+These methods of constructing derived types can be applied recursively.
+
+21 Arithmetic types and pointer types are collectively called scalar types. Array and
+structure types are collectively called aggregate types.37)
+
+22 An array type of unknown size is an incomplete type. It is completed, for an identifier of
+that type, by specifying the size in a later declaration (with internal or external linkage).
+A structure or union type of unknown content (as described in 6.7.2.3) is an incomplete
+type. It is completed, for all declarations of that type, by declaring the same structure or
+union tag with its defining content later in the same scope.
+
+23 Array, function, and pointer types are collectively called derived declarator types. A
+declarator type derivation from a type T is the construction of a derived declarator type
+from T by the application of an array-type, a function-type, or a pointer-type derivation to
+T.
+
+25 Any type so far mentioned is an unqualified type. Each unqualified type has several
+qualified versions of its type,38) corresponding to the combinations of one, two, or all
+three of the const, volatile, and restrict qualifiers. The qualified or unqualified
+versions of a type are distinct types that belong to the same type category and have the
+same representation and alignment requirements.39) A derived type is not qualified by the
+qualifiers (if any) of the type from which it is derived.
+
+26 A pointer to void shall have the same representation and alignment requirements as a
+pointer to a character type.39) Similarly, pointers to qualified or unqualified versions of
+compatible types shall have the same representation and alignment requirements. All
+pointers to structure types shall have the same representation and alignment requirements
+as each other. All pointers to union types shall have the same representation and
+alignment requirements as each other. Pointers to other types need not have the same
+representation or alignment requirements.
+

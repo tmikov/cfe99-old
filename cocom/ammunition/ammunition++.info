@@ -1,0 +1,27 @@
+This is Info file ammunition++.info, produced by Makeinfo version 1.67
+from the input file /tmp/sgml2info10561tmp2.
+
+   \input texinfo
+
+
+Indirect:
+ammunition++.info-1: 136
+ammunition++.info-2: 41963
+
+Tag Table:
+(Indirect)
+Node: Top136
+Node: Introduction997
+Node: Package for allocating memory with fixing some allocation errors1989
+Node: Package for work with variable length objects4859
+Node: Package for work with stacks of objects9520
+Node: Package for work with hash tables15409
+Node: Package for work with source code positions20120
+Node: Package for output of compiler messages24723
+Node: Package for work with command line31629
+Node: Package for work with bit strings38422
+Node: Package for machine-independent arbitrary precision integer arithmetic41963
+Node: Package for machine-independent IEEE floating point arithmetic55315
+Node: Ticker package84778
+
+End Tag Table

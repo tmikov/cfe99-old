@@ -1,0 +1,14 @@
+avl-0.4	debian support
+	range iterator
+	ANSI C compliant test by James A. Morrison
+	C++ compatibility
+
+avl-0.3 cygwin support
+	added by Ralf Habacker
+	minor cleanup
+
+avl-0.2 bugfix release
+	exit bug in the iterator code fixed
+	proper compilation switches
+
+avl-0.1 initial release

@@ -1,0 +1,213 @@
+Starting parse
+Entering state 0
+Reducing via rule 3 (line 189),  -> global_declaration_seq
+state stack now 0
+Entering state 1
+Reading a token: Next token is 284 (SCLASS)
+Shifting token 284 (SCLASS), Entering state 7
+Reducing via rule 44 (line 319), SCLASS  -> decl_modif
+state stack now 0 1
+Entering state 17
+Reading a token: Next token is 288 (TYPESPEC)
+Shifting token 288 (TYPESPEC), Entering state 10
+Reducing via rule 38 (line 294), TYPESPEC  -> typespec
+state stack now 0 1 17
+Entering state 16
+Reducing via rule 41 (line 303),  -> after_type_spec
+state stack now 0 1 17 16
+Entering state 49
+Reading a token: Next token is 275 (IDENT)
+Reducing via rule 34 (line 287), typespec after_type_spec  -> type_start
+state stack now 0 1 17
+Entering state 50
+Reducing via rule 36 (line 289), decl_modif type_start  -> type_start
+state stack now 0 1
+Entering state 15
+Next token is 275 (IDENT)
+Shifting token 275 (IDENT), Entering state 30
+Reducing via rule 94 (line 573), IDENT  -> decl_notype
+state stack now 0 1 15
+Entering state 47
+Reading a token: Next token is 59 (';')
+Reducing via rule 83 (line 513), decl_notype  -> decl
+state stack now 0 1 15
+Entering state 46
+Reducing via rule 79 (line 495), decl  -> _decl
+<FAS> unsigned float
+state stack now 0 1 15
+Entering state 45
+Next token is 59 (';')
+Reducing via rule 23 (line 257), _decl  -> decl_maybe_init
+state stack now 0 1 15
+Entering state 43
+Reducing via rule 20 (line 248), decl_maybe_init  -> decl_list
+state stack now 0 1 15
+Entering state 42
+Next token is 59 (';')
+Reducing via rule 17 (line 239), decl_list  -> optional_decl_list
+state stack now 0 1 15
+Entering state 41
+Next token is 59 (';')
+Shifting token 59 (';'), Entering state 69
+Reducing via rule 8 (line 209), type_start optional_decl_list ';'  -> global_declaration
+state stack now 0 1
+Entering state 13
+Reducing via rule 2 (line 184), global_declaration_seq global_declaration  -> global_declaration_seq
+state stack now 0
+Entering state 1
+Reading a token: Next token is 288 (TYPESPEC)
+Shifting token 288 (TYPESPEC), Entering state 10
+Reducing via rule 38 (line 294), TYPESPEC  -> typespec
+state stack now 0 1
+Entering state 16
+Reducing via rule 41 (line 303),  -> after_type_spec
+state stack now 0 1 16
+Entering state 49
+Reading a token: Next token is 275 (IDENT)
+Reducing via rule 34 (line 287), typespec after_type_spec  -> type_start
+state stack now 0 1
+Entering state 15
+Next token is 275 (IDENT)
+Shifting token 275 (IDENT), Entering state 30
+Reducing via rule 94 (line 573), IDENT  -> decl_notype
+state stack now 0 1 15
+Entering state 47
+Reading a token: Next token is 40 ('(')
+Shifting token 40 ('('), Entering state 66
+Reducing via rule 91 (line 540),  -> @8
+state stack now 0 1 15 47 66
+Entering state 119
+Reading a token: Next token is 287 (TYPEQUAL)
+Shifting token 287 (TYPEQUAL), Entering state 9
+Reducing via rule 46 (line 321), TYPEQUAL  -> decl_modif
+state stack now 0 1 15 47 66 119
+Entering state 17
+Reading a token: Next token is 40 ('(')
+Reducing via rule 37 (line 290), decl_modif  -> type_start
+state stack now 0 1 15 47 66 119
+Entering state 183
+Next token is 40 ('(')
+Shifting token 40 ('('), Entering state 272
+Reading a token: Next token is 276 (TYPENAME)
+Reducing via rule 119 (line 679),  -> @12
+state stack now 0 1 15 47 66 119 183 272
+Entering state 297
+Next token is 276 (TYPENAME)
+Shifting token 276 (TYPENAME), Entering state 6
+Reducing via rule 49 (line 346), TYPENAME  -> typedef_spec
+state stack now 0 1 15 47 66 119 183 272 297
+Entering state 19
+Reducing via rule 43 (line 311),  -> after_typedef_spec
+state stack now 0 1 15 47 66 119 183 272 297 19
+Entering state 51
+Reading a token: Next token is 91 ('[')
+Reducing via rule 35 (line 288), typedef_spec after_typedef_spec  -> type_start
+state stack now 0 1 15 47 66 119 183 272 297
+Entering state 183
+Next token is 91 ('[')
+Shifting token 91 ('['), Entering state 209
+Reading a token: Next token is 277 (NUMBER)
+Shifting token 277 (NUMBER), Entering state 92
+Reducing via rule 219 (line 966), NUMBER  -> primary
+state stack now 0 1 15 47 66 119 183 272 297 183 209
+Entering state 110
+Reading a token: Next token is 93 (']')
+Reducing via rule 207 (line 944), primary  -> unary_expr
+state stack now 0 1 15 47 66 119 183 272 297 183 209
+Entering state 108
+Reducing via rule 205 (line 939), unary_expr  -> cast_expr
+state stack now 0 1 15 47 66 119 183 272 297 183 209
+Entering state 107
+Reducing via rule 188 (line 912), cast_expr  -> expr
+state stack now 0 1 15 47 66 119 183 272 297 183 209
+Entering state 118
+Next token is 93 (']')
+Reducing via rule 187 (line 907), expr  -> const_expr
+state stack now 0 1 15 47 66 119 183 272 297 183 209
+Entering state 295
+Next token is 93 (']')
+Shifting token 93 (']'), Entering state 343
+Reducing via rule 117 (line 673), '[' const_expr ']'  -> typecast
+Error   file 2: Unsupported
+state stack now 0 1 15 47 66 119 183 272 297 183
+Entering state 213
+Reading a token: Next token is 41 (')')
+Reducing via rule 82 (line 507), typecast  -> _typecast
+<S> ptr to <FAS> unsigned float
+state stack now 0 1 15 47 66 119 183 272 297 183
+Entering state 275
+Reducing via rule 145 (line 796), type_start _typecast  -> decl_param
+state stack now 0 1 15 47 66 119 183 272 297
+Entering state 190
+Reducing via rule 138 (line 770), decl_param  -> decl_param_list
+state stack now 0 1 15 47 66 119 183 272 297
+Entering state 188
+Next token is 41 (')')
+Reducing via rule 132 (line 735), decl_param_list  -> decl_params
+state stack now 0 1 15 47 66 119 183 272 297
+Entering state 346
+Reducing via rule 125 (line 711), decl_params  -> optional_decl_params
+state stack now 0 1 15 47 66 119 183 272 297
+Entering state 345
+Next token is 41 (')')
+Shifting token 41 (')'), Entering state 371
+Reducing via rule 120 (line 684), '(' @12 optional_decl_params ')'  -> typecast
+state stack now 0 1 15 47 66 119 183
+Entering state 213
+Reading a token: Next token is 41 (')')
+Reducing via rule 82 (line 507), typecast  -> _typecast
+Error   file 2: Invalid storage class for function
+state stack now 0 1 15 47 66 119 183
+Entering state 275
+Reducing via rule 145 (line 796), type_start _typecast  -> decl_param
+state stack now 0 1 15 47 66 119
+Entering state 190
+Reducing via rule 138 (line 770), decl_param  -> decl_param_list
+state stack now 0 1 15 47 66 119
+Entering state 188
+Next token is 41 (')')
+Reducing via rule 132 (line 735), decl_param_list  -> decl_params
+state stack now 0 1 15 47 66 119
+Entering state 187
+Reducing via rule 122 (line 698), decl_params  -> any_params
+state stack now 0 1 15 47 66 119
+Entering state 184
+Next token is 41 (')')
+Shifting token 41 (')'), Entering state 279
+Reducing via rule 92 (line 545), decl_notype '(' @8 any_params ')'  -> decl_notype
+state stack now 0 1 15
+Entering state 47
+Reading a token: Next token is 59 (';')
+Reducing via rule 83 (line 513), decl_notype  -> decl
+state stack now 0 1 15
+Entering state 46
+Reducing via rule 79 (line 495), decl  -> _decl
+<> Function ( void ) returning <IAS> signed int
+state stack now 0 1 15
+Entering state 45
+Next token is 59 (';')
+Reducing via rule 23 (line 257), _decl  -> decl_maybe_init
+state stack now 0 1 15
+Entering state 43
+Reducing via rule 20 (line 248), decl_maybe_init  -> decl_list
+state stack now 0 1 15
+Entering state 42
+Next token is 59 (';')
+Reducing via rule 17 (line 239), decl_list  -> optional_decl_list
+state stack now 0 1 15
+Entering state 41
+Next token is 59 (';')
+Shifting token 59 (';'), Entering state 69
+Reducing via rule 8 (line 209), type_start optional_decl_list ';'  -> global_declaration
+state stack now 0 1
+Entering state 13
+Reducing via rule 2 (line 184), global_declaration_seq global_declaration  -> global_declaration_seq
+state stack now 0
+Entering state 1
+Reading a token: Now at end of input.
+Reducing via rule 1 (line 180), global_declaration_seq  -> program
+state stack now 0
+Entering state 398
+Now at end of input.
+Shifting token 0 ($), Entering state 399
+Now at end of input.

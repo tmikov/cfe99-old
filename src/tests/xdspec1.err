@@ -1,0 +1,27 @@
+Microsoft (R) 32-bit C/C++ Optimizing Compiler Version 12.00.8804 for 80x86
+Copyright (C) Microsoft Corp 1984-1998. All rights reserved.
+
+xdspec1.c
+xdspec1.c(1) : error: 'wrong': unrecognized __declspec
+xdspec1.c(7) : error: More than one __declspec(dllimport/dllexport) in declaration
+xdspec1.c(8) : error: More than one __declspec(dllimport/dllexport) in declaration
+xdspec1.c(9) : error: More than one __declspec(dllimport/dllexport) in declaration
+xdspec1.c(12) : error: More than one __declspec(noreturn) in declaration
+xdspec1.c(16) : error: 'v7': __declspec(noreturn) only applies to functions
+xdspec1.c(18) : error: 'v8': __declspec(dllimport/dllexport) only applies to public symbols
+xdspec1.c(20) : error: 'v9': __declspec(dllimport) must be used on external definitions
+xdspec1.c(24) : error: 'l1': __declspec(dllimport/dllexport) only applies to public symbols
+xdspec1.c(25) : error: 'l2': __declspec(dllimport) must be used on external definitions
+xdspec1.c(26) : error: 'l3': __declspec(dllimport/dllexport) only applies to public symbols
+xdspec1.c(27) : error: 'l4': __declspec(dllimport) must be used on external definitions
+xdspec1.c(34) : error: 'm1': __declspec(dllimport/dllexport) only applies to public symbols
+xdspec1.c(35) : error: 'm2': __declspec(dllimport) must be used on external definitions
+xdspec1.c(39) : error: 'func6': __declspec(dllimport) used with a function definition
+xdspec1.c(81) : error: 'v12': __declspec(dllimport/dllexport) conflict with previous declaration
+     xdspec1.c(80) : See previous declaration of 'v12'
+xdspec1.c(84) : error: 'v13': __declspec(dllimport) must be used on external definitions
+xdspec1.c(87) : error: 'v14': __declspec(dllimport) must be used on external definitions
+xdspec1.c(90) : error: 'v15': __declspec(dllimport/dllexport) conflict with previous declaration
+     xdspec1.c(89) : See previous declaration of 'v15'
+xdspec1.c(93) : error: 'v16': __declspec(dllimport/dllexport) conflict with previous declaration
+     xdspec1.c(92) : See previous declaration of 'v16'

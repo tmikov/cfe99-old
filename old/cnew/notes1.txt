@@ -1,0 +1,707 @@
+19 Aug 1999:
+* I have determined the places where nt-symbols that include all cases of creating
+new scopes:
+  type_start
+  _decl
+  _decl_notype
+  _decl_or_parm
+  _typecast
+
+  There we have to remember the current scope on entry and restore it on exit.
+
+How about maintaing an explicit stack that keeps track of:
+  - current scope
+  - decl data
+  - the parse type
+
+We shall have non-term called save_state that will create a record and
+return it. After finishing the work, we cleanup. For example:
+  : type_start _decl local_declaration_seq compound_stmt 
+will be
+  : save_state type_start _decl local_declaration_seq compound_stmt 
+    { restore_state( $1 ) }
+
+* Ok, have to think about the structure of the expression trees.
+Here are some initial notes:
+  - Everything will be explicit - including value fetching or
+  *any* type conversions.
+  - How do we represent structures? With explicit pointer addition???
+  Perhaps no.
+  - Obvious optimizations will be performed while building the tree.
+  This will decrease the amount of nodes that the following passes must
+  work on.
+  A particularly important optimization is constant folding - we need a
+  full blown constant folding in order to implement initialization of
+  array sizes, enum values and static variables.
+  Note: Only simple floating point operations will be folded. No division!
+  - Do we need separate operations for fetching from constant and
+  variable address?
+  - How do we handle arrays? Do we convert them to pointers or we store
+  the original info? Even more: if we have this "a[i][j]", do we convert
+  it to "a[i,j]" in order to facilitate optimizations?
+  I think that AST building we should convert all array references to
+  pointer arithmetic (which is the more general). Then later we can
+  translate back all pointer accesses into array references and even
+  mix them.
+  - Do we generate a "fetch" for constants?
+  - Literal strings: support a table? When? During code generation or
+  during parsing?
+
+Let's start with the simple cases:
+  //int a, b, c; a = b + c;
+  e_assign(
+      e_sym( a ),
+      e_add(
+          e_fetch( "int", e_sym( b ) ),
+          e_fetch( "int", e_sym( c ) )
+      )
+  )
+
+  // char a, b, c; a = b + c;
+  e_assign(
+      e_sym( a ),
+      e_cvt( "char",
+           e_add(
+               e_cvt( "int", e_fetch( "char", e_sym( b ) ) ),
+               e_cvt( "int", e_fetch( "char", e_sym( c ) ) )
+           )
+      )
+  )
+
+  Observe the explicit conversions to "int" and "char". There must be
+nothing implicit in the tree.
+  Here is something with pointers:
+  // int * pi; long l; short * ps; *pi = *ps + l;
+  e_assign(
+      e_fetch( "ptr", e_sym( pi ) ),
+      e_add(
+          e_cvt( "long",
+              e_fetch( "short",
+                  e_fetch( "ptr", e_sym( ps ) )
+              )
+          ),
+          e_fetch( "long", e_sym( l ) )
+      )
+  )
+
+  Let's see arrays:
+  // int a[], i, res;  res = a[i];
+  e_assign(
+      e_sym( res ),
+      e_fetch( "int",
+          e_add(
+              e_sym( a ),
+              e_mul(
+                  e_fetch( "int", e_sym( i ) ),
+                  e_icon( 4 )
+              )
+          )
+      )
+  )
+
+  To convert it back we need to recognize the following pattern:
+  e_add( %1, e_mul( %2, e_icon( %3 ) ) )
+    or
+  e_add( %1, %2 )
+    where:
+  %1 - sym : pointer or array of %type%
+     - e_array : array of %type% 
+  %2 - any expression
+  %3 - sizeof(%type%)
+    to:
+  e_array( %type%, %1, %2 )
+
+  What if:
+  // int a[][N], i, j, res; res = a[i][j];
+
+  e_assign(
+      e_sym( res ),    
+      e_fetch( "int",
+          e_add(
+              e_add(
+                  e_sym( a ),
+                  e_mul( e_fetch( "int", e_sym( i ) ), e_icon( 4*N ) )
+              ),
+              e_mul( e_fetch( "int", e_sym( j ) ), e_icon( 4 ) )
+          )
+      )
+  )
+
+  1-st pass:
+  -------------
+  e_assign(
+      e_sym( res ),    
+      e_fetch( "int",
+          e_add(
+              e_array( "int [N]",
+                  e_sym( a ),
+                  e_fetch( "int", e_sym( i ) )
+              ),
+              e_mul( e_fetch( "int", e_sym( j ) ), e_icon( 4 ) )
+          )
+      )
+  )
+
+  2-nd pass:
+  -------------
+  e_assign(
+      e_sym( res ),    
+      e_fetch( "int",
+          e_array( "int",
+              e_array( "int [N]",
+                  e_sym( a ),
+                  e_fetch( "int", e_sym( i ) )
+              ),
+              e_fetch( "int", e_sym( j ) )
+          )
+      )
+  )
+
+  3-rd pass:
+  --------------
+  e_assign(
+      e_sym( res ),    
+      e_fetch( "int",
+          e_array( "int [][N]",
+              e_sym( a ),
+              e_fetch( "int", e_sym( i ) )
+              e_fetch( "int", e_sym( j ) )
+          )
+      )
+  )
+
+  Ok, obviously it is possible to convert back the array representation
+  end even to improve it. So, for now we shall generate explicit operations.
+  This will have the benefit that "hidden" array operations will be
+  revealed.
+
+  How about structures?
+  // struct Coord { int x, y } c; int res;  res = c.y;
+
+  e_assign(
+      e_sym( res ),
+      e_fetch( "int", e_struct( "Coord.y", e_sym( c ) ) )
+  )
+
+  // struct Coord { int x, y } * pc; int res; res = pc->y;
+
+  e_assign(
+      e_sym( res ),
+      e_struct( "Coord.y", e_fetch( "ptr", e_sym( pc ) ) )
+  )
+
+* Well, it seems that the problem is harder than it seems on
+first sight. Here is why:
+  - what we do with dereferencies ? They do not necessarily
+  mean a load!
+  - derefencies whose values aren't used can't simply be removed.
+  Why? Because if the address referenced has a _volatile_ attribute,
+  it must be read anyway!
+  - How do we (and do we at all) track the lvalue/rvalue attrbutes?
+
+The natural way seems to be to use nodes that represent the "meaning"
+of the operators, without any implicitness.
+Q: What does the "*" (pointer dereference) operator mean?
+A: It converts from an address to a reference to that address.
+Unfortunately this operator has implicitness in itself.
+
+I suggest that use the operator when we meet it and later when we
+use it, we remove it and replace it with whatever is necessary -
+load/store/nothing.
+Q: What if type-conversions have been to it? Won't it be hidden
+below the conversions?
+A: Let's see. Normally conversions should imply using the rvalue,
+so the "*" would have been removed. Most compilers however allow
+typecasts on l-values as an extension. So, the "*" must be kept.
+Hmmm. I think that type-conversions should be allowed on l-values
+ONLY IF they do not change the size of the type. Everything else
+is stupid! It doesn't fit into the idea of a retargetable compiler.
+if anyone wants to achieve the same effect, use "&" and cast the
+result pointer! Any reasonably good compiler will remove the "&"
+anyway!
+
+So, when we have conversion over the "*" operator, if the size of
+the type doesn't change we keep it. If it changes, it is an rvalue,
+fetch the value and convert it!
+Then when checking for "*" we allow for one step of conversion. We
+could even apply the conversion in the "*" operator itself! (This
+suggests the general idea that if the conversion doesn't change
+type-s size and some other minor conditions hold, we can merge
+the typecast operator in its target).
+
+How about lvalue and rvalue???? Something is still not clear!
+Do we need to keep an explicit lvalue/rvalue attribute, or we
+can deduce it in a general way from the expression code?
+
+There is something common in the following expr.codes:
+  e_sym, e_struct, e_array, e_deref.
+They are l-valus? Are they the only possible l-values?
+What is their type? Is it a pointer? May be not.
+  
+  *(&i + 1)
+
+  e_deref(                   lvalue
+      e_add(
+          e_address(
+              e_sym( i )     lvalue
+          ),
+          e_con( 1 )
+      )
+  )
+
+  If we assign to it or we fetch it, e_deref will disappear.
+What is their type? It is the type of the l-value. It is not
+a pointer to it!
+  As a nice side effect now lvalue and rvalue are mutually exclusive!
+
+How about real arrays. The array name is not a variable, it is
+a constant value. How do we treat it? There are two possibilities:
+  - Introduce a new symbol for this purpose
+  - Explictly take its address and force the type of the pointer to
+  be the type of the array.
+
+
+* Here is the idea of expression codes.
+
+The following codes are lvalues (all the others are rvalues):
+  - e_sym       variable
+  - e_deref     indirect acces s through a pointer
+  - e_struct    member of a structure
+  - e_array     array element
+
+From a C point of view the lvalues have the type of the value.
+Actually however these nodes calculate the *address* of their operand.
+They have *no* value, they only reference a location. In order to extract
+the value they point to, we need to use e_fetch. In order to store something
+in the location, we must use e_assign.
+So, the argument of e_fetch/e_assign is ALWAYS an l-value. e_fetch/e_assign
+convert an l-value to a r-value.
+
+e_addr returns the address of its operand. Its operand must be an l-value,
+so its address is already available. Thus e_addr does nothing but change
+the C type of the sub-expression. It performs no action.
+
+Here is how we handle C's dualism arrays/pointers.
+Whenever we e_fetch an e_sym which is an actual array, we generate
+e_addr( e_sym( arr ) ), the type of e_addr being "&arr[0]". For example
+this: "char a[10], res; res = a[10];". It is equal to: "res = *(a + 10)"
+
+e_assign(
+    e_sym( "char", res ),
+    e_fetch(
+        e_deref( "char",
+            e_add( 
+                e_addr( "char *", e_sym( "char[10]", a ) ),
+                e_icon( "int", 10 )
+            )
+        )
+    )
+
+Note: we check for complete types during e_fetch. So a deref
+of an incomplete type doesn't always generate an error, because
+its value may not be used. For example:
+  struct Coord * p;
+  *p; // Incomplete type!
+  &*p; // it os OK because we only calculate the address
+
+How does typecast of an l-value fit into this picture?
+When can we insert the typecast in the preceding node?
+Note that if we don't patch the fetch with the typecast,
+the following optimization will not work:
+   int i; char c;
+   c = *(char *)&i;
+We will get:
+   e_cvt( "char", e_fetch( "int", e_sym( "int", i ) ) )
+which fetches an entire "int" when it must fetch only
+a "char".
+If however the typecast "patched" the e_fetch we would get:
+   e_fetch( "char", e_sym( "int", i ) )
+which is exactly what we need.
+
+An working hypothesis is that the typecast can be patched if
+the new type is smaller.
+Although, strictly speaking patching the e_fetch() to get a
+different type seems dangerous. It must pay attention to
+byte ordering, etc. Even worse: on many machines when we
+say:
+  "inc a, b; a = (char)b;"
+in fact we want to fetch the whole word and truncate it to
+a byte!
+So, the new working hypothesis is that we can patch the type
+only if it has exactly the same size. This is better. If we
+go a little further down this road, we end up with: we patch
+the type if it is the same class: integral, scalar, struct/union.
+This should be safe!
+I wonder whether this headache is necessary at all. Perhaps later
+optimizations will get rid of it anyway. Perhaps we should
+optimize only the most obvious cases when the type is the same.
+This is even more restrictive, but it is safe! :-) Applies
+for "*&", "&*" and for "(type)(type)".
+
+
+* Let's describe the general process of tree building:
+
+TODO: function ptrs, lvalue typecasts, error nodes
+
+function lvalue ( x : ast ) : boolean
+  return x in [e_sym, e_struct, e_array, e_deref]
+end function
+
+function rvalue ( x : ast ) : boolean
+  return !lvalue( x )
+end function
+
+function fetch ( x : ast ) : ast;
+  // Perform array to ptr conversion before checking for incomplete
+  // types, because the array may be incomplete
+  //
+  if code(x) = e_sym and type(x) = array then
+    res : ast := new ast
+
+    // generate &array[0]
+
+    code(res) := e_addr
+    type(res) := pointed_by( type(x) )
+    child(res) := x
+
+    return res
+  endif
+
+  if not IsCompleteType( type( x ) ) then
+    error "Incomplete type"
+    return error
+  endif
+
+  if x in [e_sym, e_struct, e_array, e_fetch] then
+    res : ast := new ast
+
+    code(res) := e_fetch
+    type(res) := type(x)
+    child(res) := x
+
+    return res
+  else
+    internal_error "Invalid fetch"
+  endif
+end
+
+function make_rvalue ( x : ast ) : ast
+  if rvalue( x ) then
+    return x  // already a rvalue
+  else
+    return fetch( x )
+  endif
+end function
+
+function build_ident ( id : TSymbol ) : ast
+  res : ast := new ast;
+
+  code(res) := e_sym
+  type(res) := type(id)
+  sym(res)  := id
+
+  return res
+end function
+
+// Returns true if the two types are of the same class
+// (integral/floating/pointer/struct) and they have the same
+// size.
+//
+function similar_types ( ta, tb : type ) : boolean
+  return
+     type_class( ta ) = type_class( tb ) and
+     type_size( ta ) = type_size( tb )  
+end function
+
+
+// This is called to perform optmizations of type-casts.
+// The following optimizations are performed (when apropriate
+// conditions apply):
+//   - consequtive type-casts are merged
+//   - the type is patched into the operand and the type-cast is removed
+//
+function optimize_typecast ( to : ast ) : ast
+  from      : ast  := child( to )
+  from_type : type := type( from )
+  to_type   : type := type( to )
+
+  ASSERT( code( to ) == e_cvt )
+
+// Check for optimizations if we have consequtive type-casts.
+// If the child type-cast's type is of the same class (see below)
+// and it is larger or equal to our type, we can "patch" the
+// new type there
+//
+// Note: the condition about type sizes is more relaxing than
+// the next one below, but we have one typecast already
+//
+  if code(from) = e_cvt and
+     type_class( to_type ) = type_class( from_type ) and
+     type_size( to_type ) <= type_size( from_type ) then
+
+     type(from) := to_type
+     delete to  // free the unused node
+
+     // the next type_cast has been changed, so new opportunities
+     // for optimizations may occur
+     //
+     return optimize_typecast( from )
+  endif
+
+// check about "patching" the type in the child. The type can 
+// be "patched-in" if it is the same class: integral,pointer,struct/union
+// and the same size!
+//
+// Note: Having this condition, it is not necessary to check if we
+// are casting to the same type. The implemented check is a little
+// more relaxed and if the types are equal will produce the same
+// result.
+//
+  if similar_types( to_type, from_type ) then
+     type(from) := to_type
+     delete to
+     return from
+  endif
+
+  return to
+end function
+
+// type_cast must optimize at least the most obvious cases because
+// it is widely used in cases where often no actual type_cast will be
+// necessary
+//
+function type_cast ( to : type, from : ast ) : ast
+  if is_scalar( to ) = false then
+    Error "Invalid type-cast"
+    return error
+  endif
+
+  from := make_rvalue( from ) // will check for errors in from
+
+  ... how about l-value typecasts?
+
+  // optimize constants
+  //
+  if code(from) = constant then
+    return convert_constant( to, from )
+  endif
+
+  res : ast := new ast
+
+  code(ast) := e_cvt
+  type(ast) := to
+  child(ast) := from
+
+  return optimize_typecast( res )
+end function
+
+function deref ( x : ast ) : ast
+  res : ast
+  res_type : type;
+
+  x := make_rvalue( x );
+
+  if not is_pointer( type(x) ) then
+    error "Pointer required"
+    return error
+  endif
+
+  res_type := pointed_by( type(x) )
+
+  // Optimize:
+  //    e_deref( "type", e_addr( "type *", e_xxx( "type", .. ) ) =
+  //    e_cvt( "type", e_fetch( e_xxx( "type", .. ) ) )
+  //
+  if code(x) = e_addr and
+     similar_types( res_type, type(child(x)) ) then
+
+    res := child(x)    // save the child
+    delete x           // free the e_addr
+
+    // type-cast the result. This will also convert it to rvalue
+    return type_cast( res_type, res ) 
+  endif
+
+  res := new ast
+
+  code(res)  := e_deref
+  type(res)  := res_type
+  child(res) := x
+
+  return res  
+end function
+
+function gen_sizeof ( x : type ) : ast
+  s : target_int
+
+  CalculateTypeSize( s, x )
+
+  return new_integer_constant( s, "unsigned int" )
+end function
+
+function arithmetic_conversion ( t1, t2 : type ) : type
+  ... the usual arithmetic conversions ...
+  to be filled in later
+end function
+
+function add ( op1, op2 : ast ) : ast;
+  result_type : type
+  res : ast := new ast
+
+  op1 := make_rvalue( op1 )
+  op2 := make_rvalue( op2 )
+
+  ... support all cases ...
+  ... implement pointers using sizeof() ...
+
+  ... pointer, integral ...
+  op2 := type_cast( integral_promotion( type(op2) ), op2 )
+  code(res) := e_add
+  type(res) := type(op1)
+  children(res) := [op1, op2]
+
+  ... arithmetic, arithmetic
+  result_type := arithmetic_conversion( type(op1), type(op2) )
+  op1 := type_cast( result_type, op1 )
+  op2 := type_cast( result_type, op2 )
+
+  code(res) := e_add
+  type(res) := result_type
+  children(res) := [op1, op2]
+
+  return res
+end;
+
+
+* btw, another issue popped up. I realized that it is useless to keep the
+AST-s of all functions in the memory at the same time. Actually only
+one function needs to be in the memory. After the p-code has been generated,
+it can be freed.
+The problem is:
+  Can we free the AST just by walking it, or we need to keep a pool of
+some kind? Well, a simple pool won't cut it because we must also
+allocate AST nodes and types that live outside the scope of the
+current function. There are several solutions to this problem:
+   - Never deallocate nodes. It is possible because all nodes associated with
+   the current function will eventually be freed.
+   - Keep a pointer to the heap that owns the particular block.
+
+Lets look at the different things that we allocate:
+1.Type nodes (TTypeNode, TQualNode): These need to be alive for a long time,
+because they belong to the symbol table and we need the symbol table during
+all phases.
+It turns out that at this point types are not freed at all. Several alternatives
+are possible:
+  - If we assume that types are never going to be freed, the current pagedheap
+  is perfect. An arena will do as well (because we don't free anyway).
+  - If the types are going to be freed at some point in the future, after a
+  function is being processed (perhaps because of being replaced with lo-level
+  types), we can use a per-function arena.
+
+2. StorageClasses
+They are freed rarely. Each storage class belongs to a symbol (with the
+excetion of EnumSClass which is used for all enum members and is static
+ - this could easily be changed however).
+We can assume that a storage class will be freed when the associated symbol
+is freed. This means never.
+
+3. Symbols (TSymbol and TStructDef).
+Ok, obviously these are alive all the time because they are used all
+the time. They are necessary for AST-s, p-code and even for assembler
+and object file generation.
+In rare cases (errors and valid redeclarations) a symbol is being freed.
+
+In some cases it is possible, but definitely useless to free the
+local automatic symbols, after a function has been generated.
+
+4. Scopes: Some of them belong to symbols and obviously will have
+the same life-time. Others form the symbol-table itself, so will live
+"for ever" as well.
+In a word, scopes will not be freed.
+
+5. Code AST-s
+They belong to a function. They are never deallocated one by one. Obviously
+after a function has been compiled to p-code, the code AST-s can be freed.
+An arena seems good.
+
+6. Expr AST-s.
+Well, they are more widely used: some will have global scope,
+some will belong to functions. In some cases single nodes can be freed
+but this is not obligatory.
+The question is: can we clearly separate the life-times ?
+
+
+So, first of all we will have a common arena. The following objects
+will be allocated inside it:
+  - type nodes
+  - storage classes
+  - symbols
+  - scopes
+  - ident strings! (will require a small change in STRINGS.C)
+
+We shall have a per-function arena for:
+  - code AST-s
+
+Expression AST-s. These will be allocated in a global page-heap. Local
+ExprAst-s will be freed by walking the code AST of a function. To be
+able to to this the following rules must be enforced:
+  - When optimizing expressions must free the unused nodes because otherwise
+they will remain unatached.
+  - AST-s for initializing local variables: they will be attached to the
+variable only for a short time. A separate expression node will be generated
+for them and at that time the init exression will be detached from the
+variable (the variables out-live their init-expressions).
+  - Expression AST-s will never be cross-owned. Each will have exactly
+one owner, or be freed (have to think about enforcing this). Whenever
+a constant or anything else is necessary, a copy will be allocated.
+
+20 Aug 1999:
+
+* Before we get on with the constant we must decide whether we will
+keep lo-level information about the types. Well, we have to because
+at least sizeof() needs to be calculated at any time. So, the question
+is how detailed the info will be and when is it going to be generated.
+A proposed layout:
+  class : (integer, pointer, floating, struct)
+  signed : boolean
+  pointer_attr : ( CPU-dependant )
+  size : target_uint
+We also need to keep the offsets of structure/union members.
+Don't forget about bit-fields!
+
+The size of a type represented in a TTypeNode type depends on:
+  - the following qnode (e.g. __far for pointers, arrays)
+  - the preceding qnode? (e.g. __bit attribute)
+
+
+* We must provide target-dependant validation of attributes.
+For example in 8051 we can't have a pointer to __attr(bit) !
+
+
+
+* Constants... Their nodes have to be allocated by the parser.
+What are the rules?
+
+2.13.1#2 Type of integer constants. A constant depending on its radix
+and suffix receives the first of a sequence of types in which it can be
+represented.
+  decimal, no suffix : int, long int /* Ceco: unsigned long int? */
+  oct/hex, no suffix : int, unsigned int, long int, unsigned long int
+  any, suffix U : unsigned int, unsigned long int
+  any, suffix L : long int, unsigned long int
+  any, suffix LU : unsigned long int
+
+In C, ahy character constant has type int.
+In C++ a single char constant has type char, a multi-char character
+constant is int.
+
+2.13.3#1
+A floating point constant is of type double if it has no suffix.
+A suffix F denotes type float, L denotes long double.
+
+
+
+
+
+
+

@@ -1,0 +1,17 @@
+Dániel Nagy <nagydani@fazekas.hu>
+http://www.fazekas.hu/~nagydani/avl
+- principal developer
+
+Ralf Habacker <Ralf.Habacker@freenet.de>
+- cygwin support, uninstall
+
+James A. Morrison <ja2morri@student.math.uwaterloo.ca>
+- ANSI C compliance of the test code
+
+Special thanks to
+Egmont Koblinger
+who desperately needed this library for his project and
+László Babai
+who introduced this wonderful data structure to us and
+Sophia P. Burda
+my granny, who kept feeding me while I was coding

@@ -1,0 +1,87 @@
+%import {
+typedef int integer_t;
+typedef char bool_t;
+typedef char * string_t;
+typedef void * void_t;
+
+#define IR_PRINT_integer_t( x )  printf( "%d", x )
+#define IR_PRINT_string_t( x )   printf( "%s", x )
+#define IR_PRINT_void_t( x )     printf( "%p", x )
+
+}
+
+%type integer_t string_t void_t bool_t
+
+%%
+
+%abstract
+node :: %root
+;
+
+%abstract
+expr :: node
+%skeleton len : integer_t
+%other state : void_t
+;
+
+%abstract
+binary :: expr
+%skeleton left, right : expr
+;
+
+%abstract
+unary :: expr
+%skeleton op : expr
+;
+
+e_plus, e_minus, e_shl, e_shr, e_assign :: binary
+;
+
+e_fetch :: unary
+;
+
+e_sym :: expr
+%skeleton name : string_t 
+;
+
+e_icon :: expr
+%skeleton value : integer_t
+;
+
+e_cvt :: unary
+;
+
+%%
+
+/*
+void do_print ( IR_node_t node )
+{
+  IR_print_node( node, 0 );
+};
+
+int main ( void )
+{ 
+  IR_node_t x;
+
+  IR_start();
+
+  // a = b + 2 >> 1;
+
+  x =
+    IR_new_e_assign(
+      IR_new_e_sym( "a" ),
+      IR_new_e_shl(
+        IR_new_e_plus(
+          IR_new_e_fetch( IR_new_e_sym("b") ),
+          IR_new_e_icon( 2 )
+        ),
+        IR_new_e_icon( 1 )
+      )
+    );
+
+  IR_traverse_depth_first( x, 1, do_print );
+
+  IR_stop();
+};
+*/
+

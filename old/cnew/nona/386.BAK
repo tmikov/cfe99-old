@@ -1,0 +1,30 @@
+
+%commutative e_plus 
+%term e_minus e_shl 
+%term e_fetch
+%term e_sym
+%term e_icon
+%term e_assign
+
+
+%%
+
+/*
+  a = b+10 << 1;
+
+  e_assign(
+      e_sym( a ),
+      e_shl(
+          e_plus( 
+               e_fetch( e_sym(b) ),
+               e_icon( 10 )
+          ),
+          e_icon( 1 )
+      )
+  )
+*/
+
+
+
+%%
+

@@ -1,0 +1,4 @@
+- Make sure that the methods leave the upper 6 bits of the balance field
+  untouched so that they could be reclaimed for flags or other purposes.
+
+- Implement the insertion without recursion.

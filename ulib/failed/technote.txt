@@ -1,0 +1,34 @@
+1. Conventions
+
+1.1. All private symbols with external linkage are prefixed with Gc_ to avoid 
+conflic with user symbols.
+
+1.2. All public symbols are prefixed with Gc.
+
+1.3. All compound types are prefixed with T.
+
+1.4. All simple types have _t suffix.
+
+1.3. Data with external linkage is groupped in as few as possible (taking
+design and aesthetics considretaions into account) structures with a 
+"_public" suffix. 
+
+For example the shared data of an internal module 
+called PageHeap should be combined into a structure called Gc_TPageHeap_public. 
+The only instance of the structure should be called Gc_PageHeap_public or
+Gc_PH for short.
+
+Since there will be only once instance of the structure and it is with external
+linkage, it should be declared in this way int a header:
+
+extern struct Gc_TPageHeap_public
+{
+} Gc_PH;
+
+1.4. Internal defines need not follow any conventions since they are visible
+only inside the GC library.
+
+1.5. All filenames must be prefixed with gc or gc_ to avoid conflicts with
+user filenames, especially of the collector is linked as a library (in that
+case the user modules could silently replace modules from the collector).
+

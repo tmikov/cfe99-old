@@ -1,0 +1,1 @@
+lex.yy.exe < uni.txt | sort > uni.inc

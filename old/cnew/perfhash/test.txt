@@ -1,0 +1,2 @@
+word1  {return ID1;}
+word2  {return ID2;}

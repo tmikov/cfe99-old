@@ -1,0 +1,97 @@
+/*
+DEFINE_EXPR_CODE( name, string representation, number_of_operands, flags )
+*/
+
+DEFINE_EXPR_CODE( e_none, "", 0, 0 )
+
+DEFINE_EXPR_CODE( e_int_const,  "icon", 0,      0 )
+DEFINE_EXPR_CODE( e_fp_const,   "fcon", 0,      0 )
+
+/*
+e_string:
+  Its only operand is an e_list containing all characters
+  in the string.
+  A string node has type "const char *" or "const wchar_t *".
+*/
+DEFINE_EXPR_CODE( e_string,     "str",  1,      0 )
+
+/*
+e_list:
+  a1 points to the item in the list. Can't be NULL.
+  a2 points to the next item in the list. Can be NULL (if this
+     is the last item)
+  a3 points to last item of the list. Can't be null. (if this is
+     the last item, it will point to itself).
+
+  Note that a3 will point to the actual end of the list, only
+  in the first list item. For all other items a3 is undefined
+  (actually it will point to the item itself, but this is irrelevant
+  and might change)
+
+  e_list nodes have no type. They are used for initializer lists
+  and for passing arguments to functions.
+*/
+DEFINE_EXPR_CODE( e_list,       "list", 3,      0 )
+
+DEFINE_EXPR_CODE( e_comma,      ",",    2,      0 )
+
+DEFINE_EXPR_CODE( e_assign,     "=",    2,      0 )
+DEFINE_EXPR_CODE( e_asgn_mul,   "*=",   2,      0 )
+DEFINE_EXPR_CODE( e_asgn_div,   "/=",   2,      0 )
+DEFINE_EXPR_CODE( e_asgn_mod,   "%=",   2,      0 )
+DEFINE_EXPR_CODE( e_asgn_plus,  "+=",   2,      0 )
+DEFINE_EXPR_CODE( e_asgn_minus, "-=",   2,      0 )
+DEFINE_EXPR_CODE( e_asgn_and,   "&=",   2,      0 )
+DEFINE_EXPR_CODE( e_asgn_or,    "|=",   2,      0 )
+DEFINE_EXPR_CODE( e_asgn_xor,   "^=",   2,      0 )
+DEFINE_EXPR_CODE( e_asgn_shl,   "<<=",  2,      0 )
+DEFINE_EXPR_CODE( e_asgn_shr,   ">>=",  2,      0 )
+
+DEFINE_EXPR_CODE( e_cond,       "?",    3,      0 )
+
+DEFINE_EXPR_CODE( e_log_or,     "||",   2,      0 )
+DEFINE_EXPR_CODE( e_log_and,    "&&",   2,      0 )
+
+DEFINE_EXPR_CODE( e_bin_or,     "|",    2,      EF_COMMUTATIVE )
+DEFINE_EXPR_CODE( e_bin_xor,    "^",    2,      EF_COMMUTATIVE )
+DEFINE_EXPR_CODE( e_bin_and,    "&",    2,      EF_COMMUTATIVE )
+
+DEFINE_EXPR_CODE( e_eq,         "==",   2,      EF_COMMUTATIVE )
+DEFINE_EXPR_CODE( e_ne,         "!=",   2,      EF_COMMUTATIVE )
+
+DEFINE_EXPR_CODE( e_less,       "<",    2,      0 )
+DEFINE_EXPR_CODE( e_le_eq,      "<=",   2,      0 )
+DEFINE_EXPR_CODE( e_greater,    ">",    2,      0 )
+DEFINE_EXPR_CODE( e_gr_eq,      ">=",   2,      0 )
+
+DEFINE_EXPR_CODE( e_shl,        "<<",   2,      0 )
+DEFINE_EXPR_CODE( e_shr,        ">>",   2,      0 )
+
+DEFINE_EXPR_CODE( e_plus,       "+",    2,      EF_COMMUTATIVE )
+DEFINE_EXPR_CODE( e_minus,      "-",    2,      0 )
+
+DEFINE_EXPR_CODE( e_mul,        "*",    2,      EF_COMMUTATIVE )
+DEFINE_EXPR_CODE( e_div,        "/",    2,      0 )
+DEFINE_EXPR_CODE( e_mod,        "%",    2,      0 )
+
+DEFINE_EXPR_CODE( e_uplus,      "u+",   1,      0 )
+DEFINE_EXPR_CODE( e_uminus,     "u-",   1,      0 )
+DEFINE_EXPR_CODE( e_deref,      "d*",   1,      0 )
+DEFINE_EXPR_CODE( e_ref,        "r&",   1,      0 )
+DEFINE_EXPR_CODE( e_log_not,    "!",    1,      0 )
+DEFINE_EXPR_CODE( e_bin_not,    "~",    1,      0 )
+
+// ?? Make these four binary ops (second operand is amount to inc/dec)
+DEFINE_EXPR_CODE( e_pre_inc,    "++",   1,      0 )
+DEFINE_EXPR_CODE( e_post_inc,   "post++", 1,    0 )
+DEFINE_EXPR_CODE( e_pre_dec,    "--",   1,      0 )
+DEFINE_EXPR_CODE( e_post_dec,   "post--", 1,    0 )
+
+DEFINE_EXPR_CODE( e_sizeof,     "sizeof", 0,    0 )
+DEFINE_EXPR_CODE( e_typecast,   "cast", 1,      0 )
+
+DEFINE_EXPR_CODE( e_struct_deref, "->", 2,      0 )
+DEFINE_EXPR_CODE( e_struct_sel, ".", 2,         0 )
+
+DEFINE_EXPR_CODE( e_index,      "[",    2,      0 ) 
+

@@ -1,0 +1,4 @@
+cd repl
+nmake -f nt86.mak [debug=1]
+cd src
+nmake -f nt86.mak [debug=1]

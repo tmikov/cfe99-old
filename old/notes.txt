@@ -1,0 +1,101 @@
+22 Jan 2001:
+
+* I finally got a hold on attributes (like _far, _near) and declspec (like 
+dllimport, dllexport).
+
+Attributes can be considered qualifiers (they are allowed in the same 
+places and have teh same semantic binding). This allows for declarations like
+const _far volatile int x;
+
+Declspec can be considered storage classes using the same reasoning. 
+
+23 Jan 2001:
+
+* Still, not quite sure how to treat the GCC attributes. It seems they can
+appear almost everywhere although their meaning applies to the declaration ?
+
+* Once more I am speachless after looking at the GCC sources. Dozens of 
+.C files larger than 100K, 300K, some even 400K ... and this is not
+machine generated code !
+
+I don't particulary like the coding style: the old-style function headers 
+(although I realize that they are needed for bootstrapping on any platform),
+the absurdly long files, the expressions that span dozens of line. It doesn't
+leave me with a sense of clean, tight code, but rather of a unmanageable mess 
+(which is of course partly due to my unfamiliarity with the code).
+
+They do use garbage collection. It isn't Boehm's conservative collector
+but their own which operates on some data structures used in the compiler. 
+
+
+* Ok, in order to implement the type system we need to be able to build
+expression trees since the size of an array may be variable. In the
+general case we can assume that is an expression tree. We don't even need
+to fold it as long as we know that it is constant (it may be a flag).
+
+If we are to support expression statements nicely, we have to be able
+to put them in the expression tree as well. So, we need statement trees as 
+well.
+
+GCC doesn't accept this code:
+  void test ( int n, int a[{int x; x = n * 10; x}] )
+complaining that statement-expressions are valid only in function
+scope. I however think that in order to be logically consistent we have
+to assume that expression statements are valid whereever an inline function
+can be called. Consequently we must be able to accept the above code, or
+at least we shall assume so for now. We can always add the restriction 
+later.
+
+So, for types we need everything:
+symbol tables, expression trees, statement trees. 
+We might as well make the scanner return expression trees directly for
+constants.
+
+31 Jab 2001:
+
+An intriguing idea about instrinsic functions.
+#define _memcpy( _d, _s, _l )
+  ({
+    void * dest = _d;
+    const void * src = _s;
+    unsigned len = _l;
+
+    _ESI = src;
+    _EDI = dest;
+
+  $if isConst(len)
+    $dwc = value(len) / 4
+    $dwb = value(len) % 4
+    $if dwc > 3
+      _ECX = $dwc;
+      __asm rep movsd
+    $else
+      $for i = 1 to dwc
+        __asm movsd
+      $endfor
+    $endif
+    $if dwb > 3
+      _ECX = $dwb;
+      __asm rep movsb
+    $else
+      $for i = 1 to dwc
+        __asm movsb
+      $endfor
+    $endif
+  $else
+    _ECX = len;
+    __asm {
+      mov eax, ecx
+      shr ecx, 2
+      rep movsd
+      mov ecx, eax
+      and ecx, 3
+      rep movsb
+    }
+  $endif
+
+    return dest;
+  })
+
+
+

@@ -1,0 +1,40 @@
+switch          SWITCH
+struct          STRUCT
+continue        CONTINUE
+case            CASE
+sizeof          SIZEOF
+default         DEFAULT
+else            ELSE
+while           WHILE
+do              DO
+enum            ENUM
+goto            GOTO
+break           BREAK
+if              IF
+for             FOR
+union           UNION
+return          RETURN
+
+short           {RET_ITOK( TOK_SHORT, TYPESPEC );}
+signed          {RET_ITOK( TOK_SIGNED, TYPESPEC );}
+double          {RET_ITOK( TOK_DOUBLE, TYPESPEC );}
+void            {RET_ITOK( TOK_VOID, TYPESPEC );}
+int             {RET_ITOK( TOK_INT, TYPESPEC );}
+char            {RET_ITOK( TOK_CHAR, TYPESPEC );}
+long            {RET_ITOK( TOK_LONG, TYPESPEC );}
+unsigned        {RET_ITOK( TOK_UNSIGNED, TYPESPEC );}
+float           {RET_ITOK( TOK_FLOAT, TYPESPEC );}
+
+const           {RET_ITOK( TOK_CONST, TYPEQUAL );}
+volatile        {RET_ITOK( TOK_VOLATILE, TYPEQUAL );}
+
+extern          {RET_ITOK( TOK_EXTERN, SCLASS );}
+auto            {RET_ITOK( TOK_AUTO, SCLASS );}
+static          {RET_ITOK( TOK_STATIC, SCLASS );}
+register        {RET_ITOK( TOK_REGISTER, SCLASS );}
+typedef         {RET_ITOK( TOK_TYPEDEF, SCLASS );}
+
+__declspec      DECLSPEC
+__attr          ATTR
+
+

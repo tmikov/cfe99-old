@@ -1,0 +1,779 @@
+22 Jan 2001:
+
+* I finally got a hold on attributes (like _far, _near) and declspec (like 
+dllimport, dllexport).
+
+Attributes can be considered qualifiers (they are allowed in the same 
+places and have teh same semantic binding). This allows for declarations like
+const _far volatile int x;
+
+Declspec can be considered storage classes using the same reasoning. 
+
+23 Jan 2001:
+
+* Still, not quite sure how to treat the GCC attributes. It seems they can
+appear almost everywhere although their meaning applies to the declaration ?
+
+* Once more I am speachless after looking at the GCC sources. Dozens of 
+.C files larger than 100K, 300K, some even 400K ... and this is not
+machine generated code !
+
+I don't particulary like the coding style: the old-style function headers 
+(although I realize that they are needed for bootstrapping on any platform),
+the absurdly long files, the expressions that span dozens of line. It doesn't
+leave me with a sense of clean, tight code, but rather of a unmanageable mess 
+(which is of course partly due to my unfamiliarity with the code).
+
+They do use garbage collection. It isn't Boehm's conservative collector
+but their own which operates on some data structures used in the compiler. 
+
+
+* Ok, in order to implement the type system we need to be able to build
+expression trees since the size of an array may be variable. In the
+general case we can assume that is an expression tree. We don't even need
+to fold it as long as we know that it is constant (it may be a flag).
+
+If we are to support expression statements nicely, we have to be able
+to put them in the expression tree as well. So, we need statement trees as 
+well.
+
+GCC doesn't accept this code:
+  void test ( int n, int a[{int x; x = n * 10; x}] )
+complaining that statement-expressions are valid only in function
+scope. I however think that in order to be logically consistent we have
+to assume that expression statements are valid whereever an inline function
+can be called. Consequently we must be able to accept the above code, or
+at least we shall assume so for now. We can always add the restriction 
+later.
+
+So, for types we need everything:
+symbol tables, expression trees, statement trees. 
+We might as well make the scanner return expression trees directly for
+constants.
+
+31 Jab 2001:
+
+An intriguing idea about instrinsic functions.
+#define _memcpy( _d, _s, _l )
+  ({
+    void * dest = _d;
+    const void * src = _s;
+    unsigned len = _l;
+
+    _ESI = src;
+    _EDI = dest;
+
+  $if isConst(len)
+    $dwc = value(len) / 4
+    $dwb = value(len) % 4
+    $if dwc > 3
+      _ECX = $dwc;
+      __asm rep movsd
+    $else
+      $for i = 1 to dwc
+        __asm movsd
+      $endfor
+    $endif
+    $if dwb > 3
+      _ECX = $dwb;
+      __asm rep movsb
+    $else
+      $for i = 1 to dwc
+        __asm movsb
+      $endfor
+    $endif
+  $else
+    _ECX = len;
+    __asm {
+      mov eax, ecx
+      shr ecx, 2
+      rep movsd
+      mov ecx, eax
+      and ecx, 3
+      rep movsb
+    }
+  $endif
+
+    return dest;
+  })
+
+
+12 June 2002:  
+
+The current structure of types: 
+
+  qual(ptr to typedef) -> type
+
+could create problems with typedefs. Let's examine these declarations:
+
+  typedef int Int;
+  typedef const Int CInt;
+  typedef volatile CInt VCInt;
+
+We get:
+  Int   = no_qual(Int) -> int
+  CInt  = const(CInt)  -> int
+  VCInt = volatile+const(VCInt) -> int
+
+So, there is no way to determine that VCInt is in fact a "volatile CInt". All
+we know is that it is a "volatile const int". This, of course, is good enough
+for semantic analysis and code generation, but one keeps wondering whether
+the addition information could be useful (e.g. for better error messages).
+
+The same problem appears in declarations:
+  volatile CInt x;
+will produce:
+  x = volatile+const(no_typedef) -> int
+
+For now I don't think the benefit of doing it in some other way is worth the 
+significant complication.
+
+
+14 Jan 2003:
+
+* Working on declarations. A few things which I did not know, or I did not 
+realize:
+
+- 6.7.1.4 (100) The implementation may treat any register declaration simply as an auto declaration. However,
+whether or not addressable storage is actually used, the address of any part of an object declared with
+storage-class specifier register cannot be computed, either explicitly (by use of the unary &
+operator as discussed in 6.5.3.2) or implicitly (by converting an array name to a pointer as discussed in
+6.3.2.1). Thus, the only operator that can be applied to an array declared with storage-class specifier
+register is sizeof.
+
+- If at the end of the translation unit containing
+int i[];
+the array i still has incomplete type, the implicit initializer causes it to have one element, which is set to
+zero on program startup.
+
+
+15 Jan 2003:
+
+* Declarations:
+
+  SCOPE_FILE
+  {
+    // Try to locate the symbol within the inactive symbols in 
+    // global scope.
+    //
+    if symbol == NULL
+      symbol = FindSymbol( GlobalScope, ident )
+
+    SC_NONE
+      if function 
+        sclass = SC_EXTERN
+        goto SC_EXTERN
+      endif
+      if symbol
+        if sclass(symbol) in [extern,none]
+          sclass = none
+        else
+          error
+      endif
+
+    SC_EXTERN
+      if symbol
+        if sclass(symbol) in [none,extern,static]
+          sclass = sclass(symbol)
+        else
+          error
+      endif
+
+    SC_STATIC
+      if symbol
+        if sclass(symbol) != static
+          error
+      endif
+
+    SC_AUTO        - invalid
+    SC_REGISTER    - invalid
+
+    SC_TYPEDEF
+      if symbol
+        error
+
+    unless it is a typedef,
+      add to the global scope ident table
+  }
+
+  SCOPE_BLOCK
+  {
+    SC_NONE
+      if function
+        sclass = extern
+        goto SC_EXTERN
+      endif
+      sclass = auto;
+      goto SC_AUTO;
+
+    SC_EXTERN
+      // Try to locate a global symbol with this name
+      symbol = FindSymbol( GlobalScope, ident )
+      if symbol
+        if sclass(symbol) in [none,extern,static]
+          sclass = sclass(symbol)
+        else
+          error
+      endif
+      Note: if this is a new symbol, we must insert it in the global
+      scope ident table.
+
+    SC_STATIC
+      if function
+        error
+      if symbol_in_same_scope
+        error
+      symbol = NULL;
+
+    SC_AUTO    
+      if function
+        error
+      if symbol_in_same_scope
+        error
+      symbol = NULL;
+
+    SC_REGISTER
+      if function
+        error
+      if symbol_in_same_scope
+        error
+      symbol = NULL;
+
+    SC_TYPEDEF
+      if symbol_in_same_scope
+        error
+      symbol = NULL;
+  }
+
+  SCOPE_PARAMS
+  {
+    SC_NONE        
+      if symbol_in_same_scope
+        error
+      symbol = NULL;
+
+    SC_EXTERN      invalid
+    SC_STATIC      invalid
+    SC_AUTO        invalid
+
+    SC_REGISTER
+      if symbol_in_same_scope
+        error
+      symbol = NULL;
+
+    SC_TYPEDEF     invalid
+
+    adjust functions and arrays to pointers
+  }
+
+  SCOPE_STRUCT
+  {
+    function - invalid
+
+    SC_NONE
+      if symbol_in_same_scope
+        error
+      symbol = NULL;
+
+    SC_EXTERN:      invalid
+    SC_STATIC:      invalid
+    SC_AUTO:        invalid
+    SC_REGISTER:    invalid
+    SC_TYPEDEF:     invalid
+  }
+
+
+16 Jab 2003:
+
+* Declarations:
+
+6.2.2 Linkages of identifiers
+=======================================================
+
+1 An identifier declared in different scopes or in the same scope more than once can be
+made to refer to the same object or function by a process called linkage.21) There are
+three kinds of linkage: external, internal, and none.
+
+2 In the set of translation units and libraries that constitutes an entire program, each
+declaration of a particular identifier with external linkage denotes the same object or
+function. Within one translation unit, each declaration of an identifier with internal
+linkage denotes the same object or function. Each declaration of an identifier with no
+linkage denotes a unique entity.
+
+3 If the declaration of a file scope identifier for an object or a function contains the storageclass
+specifier static, the identifier has internal linkage.22)
+
+4 For an identifier declared with the storage-class specifier extern in a scope in which a
+prior declaration of that identifier is visible,23) if the prior declaration specifies internal or
+external linkage, the linkage of the identifier at the later declaration is the same as the
+linkage specified at the prior declaration. If no prior declaration is visible, or if the prior
+declaration specifies no linkage, then the identifier has external linkage.
+
+5 If the declaration of an identifier for a function has no storage-class specifier, its linkage
+is determined exactly as if it were declared with the storage-class specifier extern. If
+the declaration of an identifier for an object has file scope and no storage-class specifier,
+its linkage is external.
+
+6 The following identifiers have no linkage: an identifier declared to be anything other than
+an object or a function; an identifier declared to be a function parameter; a block scope
+identifier for an object declared without the storage-class specifier extern.
+
+7 If, within a translation unit, the same identifier appears with both internal and external
+linkage, the behavior is undefined.
+
+21) There is no linkage between different identifiers.
+22) A function declaration can contain the storage-class specifier static only if it is at file scope; see
+    6.7.1.
+
+
+6.2.5 Types
+=======================================================
+
+1 The meaning of a value stored in an object or returned by a function is determined by the
+type of the expression used to access it. (An identifier declared to be an object is the
+simplest such expression; the type is specified in the declaration of the identifier.) Types
+are partitioned into object types (types that fully describe objects), function types (types
+that describe functions), and incomplete types (types that describe objects but lack
+information needed to determine their sizes).
+
+19 The void type comprises an empty set of values; it is an incomplete type that cannot be
+completed.
+
+22 An array type of unknown size is an incomplete type. It is completed, for an identifier of
+that type, by specifying the size in a later declaration (with internal or external linkage).
+A structure or union type of unknown content (as described in 6.7.2.3) is an incomplete
+type. It is completed, for all declarations of that type, by declaring the same structure or
+union tag with its defining content later in the same scope.
+
+6.2.7 Compatible type and composite type
+=======================================================
+
+1 Two types have compatible type if their types are the same. Additional rules for
+determining whether two types are compatible are described in 6.7.2 for type specifiers,
+in 6.7.3 for type qualifiers, and in 6.7.5 for declarators.46) Moreover, two structure,
+union, or enumerated types declared in separate translation units are compatible if their
+tags and members satisfy the following requirements: If one is declared with a tag, the
+other shall be declared with the same tag. If both are complete types, then the following
+additional requirements apply: there shall be a one-to-one correspondence between their
+members such that each pair of corresponding members are declared with compatible
+types, and such that if one member of a corresponding pair is declared with a name, the
+other member is declared with the same name. For two structures, corresponding
+members shall be declared in the same order. For two structures or unions, corresponding
+bit-fields shall have the same widths. For two enumerations, corresponding members
+shall have the same values.
+
+2 All declarations that refer to the same object or function shall have compatible type;
+otherwise, the behavior is undefined.
+
+3 Acomposite type can be constructed from two types that are compatible; it is a type that
+is compatible with both of the two types and satisfies the following conditions:
+— If one type is an array of known constant size, the composite type is an array of that
+size; otherwise, if one type is a variable length array, the composite type is that type.
+— If only one type is a function type with a parameter type list (a function prototype),
+the composite type is a function prototype with the parameter type list.
+— If both types are function types with parameter type lists, the type of each parameter
+in the composite parameter type list is the composite type of the corresponding
+parameters.
+These rules apply recursively to the types from which the two types are derived.
+
+4 For an identifier with internal or external linkage declared in a scope in which a prior
+declaration of that identifier is visible,47) if the prior declaration specifies internal or
+external linkage, the type of the identifier at the later declaration becomes the composite
+type.
+
+
+6.7 Declarations
+=======================================================
+
+Constraints
+
+2 A declaration shall declare at least a declarator (other than the parameters of a function or
+the members of a structure or union), a tag, or the members of an enumeration.
+
+3 If an identifier has no linkage, there shall be no more than one declaration of the identifier
+(in a declarator or type specifier) with the same scope and in the same name space, except
+for tags as specified in 6.7.2.3.
+
+4 All declarations in the same scope that refer to the same object or function shall specify
+compatible types.
+
+Semantics
+
+5 A declaration specifies the interpretation and attributes of a set of identifiers. A definition
+of an identifier is a declaration for that identifier that:
+— for an object, causes storage to be reserved for that object;
+— for a function, includes the function body;98)
+— for an enumeration constant or typedef name, is the (only) declaration of the
+identifier.
+
+7 If an identifier for an object is declared with no linkage, the type for the object shall be
+complete by the end of its declarator, or by the end of its init-declarator if it has an
+initializer; in the case of function arguments (including in prototypes), it is the adjusted
+type (see 6.7.5.3) that is required to be complete.
+
+6.7.1 Storage-class specifiers
+=======================================================
+
+Constraints
+
+2 At most, one storage-class specifier may be given in the declaration specifiers in a
+declaration.99)
+
+4 A declaration of an identifier for an object with storage-class specifier register
+suggests that access to the object be as fast as possible. The extent to which such
+suggestions are effective is implementation-defined.100)
+100) The implementation may treat any register declaration simply as an auto declaration. However,
+whether or not addressable storage is actually used, the address of any part of an object declared with
+storage-class specifier register cannot be computed, either explicitly (by use of the unary &
+operator as discussed in 6.5.3.2) or implicitly (by converting an array name to a pointer as discussed in
+6.3.2.1). Thus, the only operator that can be applied to an array declared with storage-class specifier
+register is sizeof.
+
+5 The declaration of an identifier for a function that has block scope shall have no explicit
+storage-class specifier other than extern.
+
+6 If an aggregate or union object is declared with a storage-class specifier other than
+typedef, the properties resulting from the storage-class specifier, except with respect to
+linkage, also apply to the members of the object, and so on recursively for any aggregate
+or union member objects.
+
+
+6.7.2 Type specifiers
+=======================================================
+
+Semantics
+4 Specifiers for structures, unions, and enumerations are discussed in 6.7.2.1 through
+6.7.2.3. Declarations of typedef names are discussed in 6.7.7. The characteristics of the
+other types are discussed in 6.2.5.
+
+6.7.2.1 Structure and union specifiers
+=======================================================
+
+Constraints
+
+2 A structure or union shall not contain a member with incomplete or function type (hence,
+a structure shall not contain an instance of itself, but may contain a pointer to an instance
+of itself), except that the last member of a structure with more than one named member
+may have incomplete array type; such a structure (and any union containing, possibly
+recursively, a member that is such a structure) shall not be a member of a structure or an
+element of an array.
+
+3 The expression that specifies the width of a bit-field shall be an integer constant
+expression that has nonnegative value that shall not exceed the number of bits in an object
+of the type that is specified if the colon and expression are omitted. If the value is zero,
+the declaration shall have no declarator.
+
+4 A bit-field shall have a type that is a qualified or unqualified version of _Bool, signed
+int, unsigned int, or some other implementation-defined type.
+
+7 The presence of a struct-declaration-list in a struct-or-union-specifier declares a new type,
+within a translation unit. The struct-declaration-list is a sequence of declarations for the
+members of the structure or union. If the struct-declaration-list contains no named
+members, the behavior is undefined. The type is incomplete until after the } that
+terminates the list.
+
+8 A member of a structure or union may have any object type other than a variably
+modified type.102) In addition, a member may be declared to consist of a specified
+number of bits (including a sign bit, if any). Such a member is called a bit-field;103) its
+width is preceded by a colon.
+
+11 A bit-field declaration with no declarator, but only a colon and a width, indicates an
+unnamed bit-field.105) As a special case, a bit-field structure member with a width of 0
+indicates that no further bit-field is to be packed into the unit in which the previous bit-
+field, if any, was placed.
+
+6.7.2.3 Tags
+=======================================================
+
+Constraints
+
+1 A specific type shall have its content defined at most once.
+
+2 A type specifier of the form
+enum identifier
+without an enumerator list shall only appear after the type it specifies is complete.
+
+Semantics
+
+3 All declarations of structure, union, or enumerated types that have the same scope and
+use the same tag declare the same type. The type is incomplete109) until the closing brace
+of the list defining the content, and complete thereafter.
+
+4 Tw o declarations of structure, union, or enumerated types which are in different scopes or
+use different tags declare distinct types. Each declaration of a structure, union, or
+enumerated type which does not include a tag declares a distinct type.
+
+6 A declaration of the form
+struct-or-union identifier ;
+specifies a structure or union type and declares the identifier as a tag of that type.111)
+111) A similar construction with enum does not exist. (!!!)
+
+7 If a type specifier of the form
+struct-or-union identifier
+occurs other than as part of one of the above forms, and no other declaration of the
+identifier as a tag is visible, then it declares an incomplete structure or union type, and
+declares the identifier as the tag of that type.111)
+
+8 If a type specifier of the form
+struct-or-union identifier
+or
+enum identifier
+occurs other than as part of one of the above forms, and a declaration of the identifier as a
+tag is visible, then it specifies the same type as that other declaration, and does not
+redeclare the tag.
+
+6.7.3 Type qualifiers
+=======================================================
+
+Constraints
+2 Types other than pointer types derived from object or incomplete types shall not be
+restrict-qualified.
+
+8 If the specification of an array type includes any type qualifiers, the element type is soqualified,
+not the array type. If the specification of a function type includes any type
+qualifiers, the behavior is undefined.116)
+116) Both of these can occur through the use of typedefs.
+
+
+6.7.4 Function specifiers
+=======================================================
+
+Constraints
+
+2 Function specifiers shall be used only in the declaration of an identifier for a function.
+
+3 An inline definition of a function with external linkage shall not contain a definition of a
+modifiable object with static storage duration, and shall not contain a reference to an
+identifier with internal linkage.
+
+4 In a hosted environment, the inline function specifier shall not appear in a declaration
+of main.
+
+Semantics
+
+5 A function declared with an inline function specifier is an inline function. The
+function specifier may appear more than once; the behavior is the same as if it appeared
+only once. Making a function an inline function suggests that calls to the function be as
+fast as possible.118) The extent to which such suggestions are effective is
+implementation-defined.119)
+
+6 Any function with internal linkage can be an inline function. For a function with external
+linkage, the following restrictions apply: If a function is declared with an inline
+function specifier, then it shall also be defined in the same translation unit. If all of the
+file scope declarations for a function in a translation unit include the inline function
+specifier without extern, then the definition in that translation unit is an inline
+definition. An inline definition does not provide an external definition for the function,
+and does not forbid an external definition in another translation unit. An inline definition
+provides an alternative to an external definition, which a translator may use to implement
+any call to the function in the same translation unit. It is unspecified whether a call to the
+function uses the inline definition or the external definition.120)
+
+
+6.7.5.2 Array declarators
+=======================================================
+
+Constraints
+
+1 In addition to optional type qualifiers and the keyword static, the [ and ] may delimit
+an expression or *. If they delimit an expression (which specifies the size of an array), the
+expression shall have an integer type. If the expression is a constant expression, it shall
+have a value greater than zero. The element type shall not be an incomplete or function
+type. The optional type qualifiers and the keyword static shall appear only in a
+declaration of a function parameter with an array type, and then only in the outermost
+array type derivation.
+
+2 Only an ordinary identifier (as defined in 6.2.3) with both block scope or function
+prototype scope and no linkage shall have a variably modified type. If an identifier is
+declared to be an object with static storage duration, it shall not have a variable length
+array type.
+
+Semantics
+
+4 If the size is not present, the array type is an incomplete type. If the size is * instead of
+being an expression, the array type is a variable length array type of unspecified size,
+which can only be used in declarations with function prototype scope;122) such arrays are
+nonetheless complete types. If the size is an integer constant expression and the element
+type has a known constant size, the array type is not a variable length array type;
+otherwise, the array type is a variable length array type.
+
+5 If the size is an expression that is not an integer constant expression: if it occurs in a
+declaration at function prototype scope, it is treated as if it were replaced by *; otherwise,
+each time it is evaluated it shall have a value greater than zero. The size of each instance
+of a variable length array type does not change during its lifetime. Where a size
+expression is part of the operand of a sizeof operator and changing the value of the
+size expression would not affect the result of the operator, it is unspecified whether or not
+the size expression is evaluated.
+
+6 For two array types to be compatible, both shall have compatible element types, and if
+both size specifiers are present, and are integer constant expressions, then both size
+specifiers shall have the same constant value. If the two array types are used in a context
+which requires them to be compatible, it is undefined behavior if the two size specifiers
+evaluate to unequal values.
+
+6.7.5.3 Function declarators (including prototypes)
+=======================================================
+
+Constraints
+
+1 A function declarator shall not specify a return type that is a function type or an array
+type.
+
+2 The only storage-class specifier that shall occur in a parameter declaration is register.
+
+3 An identifier list in a function declarator that is not part of a definition of that function
+shall be empty.
+
+4 After adjustment, the parameters in a parameter type list in a function declarator that is
+part of a definition of that function shall not have incomplete type.
+
+Semantics
+
+7 A declaration of a parameter as ‘‘array of type’’ shall be adjusted to ‘‘qualified pointer to
+type’’, where the type qualifiers (if any) are those specified within the [ and ] of the
+array type derivation. If the keyword static also appears within the [ and ] of the
+array type derivation, then for each call to the function, the value of the corresponding
+actual argument shall provide access to the first element of an array with at least as many
+elements as specified by the size expression.
+
+8 A declaration of a parameter as ‘‘function returning type’’ shall be adjusted to ‘‘pointer to
+function returning type’’, as in 6.3.2.1.
+
+9 If the list terminates with an ellipsis (, ...), no information about the number or types
+of the parameters after the comma is supplied.123)
+
+10 The special case of an unnamed parameter of type void as the only item in the list
+specifies that the function has no parameters.
+
+12 If the function declarator is not part of a definition of that function, parameters may have
+incomplete type and may use the [*] notation in their sequences of declarator specifiers
+to specify variable length array types.
+
+13 The storage-class specifier in the declaration specifiers for a parameter declaration, if
+present, is ignored unless the declared parameter is one of the members of the parameter
+type list for a function definition.
+
+14 An identifier list declares only the identifiers of the parameters of the function. An empty
+list in a function declarator that is part of a definition of that function specifies that the
+function has no parameters. The empty list in a function declarator that is not part of a
+definition of that function specifies that no information about the number or types of the
+parameters is supplied.124)
+
+15 For two function types to be compatible, both shall specify compatible return types.125)
+Moreover, the parameter type lists, if both are present, shall agree in the number of
+parameters and in use of the ellipsis terminator; corresponding parameters shall have
+compatible types. If one type has a parameter type list and the other type is specified by a
+function declarator that is not part of a function definition and that contains an empty
+identifier list, the parameter list shall not have an ellipsis terminator and the type of each
+parameter shall be compatible with the type that results from the application of the
+default argument promotions. If one type has a parameter type list and the other type is
+specified by a function definition that contains a (possibly empty) identifier list, both shall
+agree in the number of parameters, and the type of each prototype parameter shall be
+compatible with the type that results from the application of the default argument
+promotions to the type of the corresponding identifier. (In the determination of type
+compatibility and of a composite type, each parameter declared with function or array
+type is taken as having the adjusted type and each parameter declared with qualified type
+is taken as having the unqualified version of its declared type.)
+
+6.7.7 Type definitions
+=======================================================
+
+Constraints
+
+2 If a typedef name specifies a variably modified type then it shall have block scope.
+
+Semantics
+
+3 In a declaration whose storage-class specifier is typedef, each declarator defines an
+identifier to be a typedef name that denotes the type specified for the identifier in the way
+described in 6.7.5. Any array size expressions associated with variable length array
+declarators are evaluated each time the declaration of the typedef name is reached in the
+order of execution. A typedef declaration does not introduce a new type, only a
+synonym for the type so specified.
+
+28 June 2003
+* Compiled the sources after a big reorganization. I have been trying to make the modules
+(e.g. c-types, c-symtab, c-ast, etc.) independant of each other, but the truth of the 
+matter is that it is simply impossible. As soon as I realized (again) that the CFE is one
+big entity, it became much easier. All definitions are in cfe_priv.h, which is included by
+all CFE files. Simple. There is improvement compared to before, since I have separated some
+things in their own header files - this however is only for convenience - they are included
+by cfe_priv.h.
+
+* Explanation of the current directory structure, the "src" subtree:
+E:\prog\c99\src
+  +--cfe
+  ¦  +--c
+  ¦  ¦  +--srtuni
+  ¦  +--h
+  +--common
+  ¦  +--c
+  ¦  +--h
+  +--out
+  +--target
+  ¦  +--c
+  ¦  +--h
+  ¦  +--i386
+  ¦     +--cfe
+  ¦     +--mach
+  +--temp
+  +--tests
+
+\cfe - target-independant C Front End
+\cfe\c - sources and private (CFE-only) headers
+\cfe\c\srtuni - a simple tool that sorts Unicode characters in ranges for use in the scanner.
+
+\common - stuff shared between all compiler modules
+\common\c - c code and private (common-only) headers
+\common\h - public headers
+
+\out - output objects and binaries are stored there
+
+\target - code to support the target
+\target\c - target-independant code, which however is parametrized by target-dependant definitions.
+\target\h - headers that wrap all target-dependant definitions together
+\target\$(TGT) - support for target $(TGT) (e.g. i386)
+\target\$(TGT)\cfe - CFE specific target dependant code
+\target\$(TGT)\mach - front-end independant target specific code
+
+\tests - compiler tests
+
+The idea is that directories are separate modules. The \h subdirectories contains the public
+(usable by other modules) headers. The \c subdirectories contains the code and private (usable
+only within the module) headers.
+The \target subtree is somewhat of an exception because the code there is used to parametrize
+the front-end, and so \target\$(TGT)\cfe is actually treated as it if is also a part of \cfe.
+
+During compile time the include path for each module are set to the corresponding \h directory
+(public includes) and to the active target \target\$(TGT)\... . Usually I prefer to specify
+full include paths, when possible, but the latter is necessary because at compile time there is 
+no way to know the active target directories.
+  
+* Problem with redeclarations of global symbols.
+Each redeclaration could potentially augment the type of the global symbol. For example:
+  int A[];
+  int A[10];
+After the second declaration the type is not "int [10]".
+However currently we always keep the first declaration. Consequtive declarations are checked
+against the first type, not against the composite type. Continuiing the example, if a third 
+declaration occurs:
+  int A[5];
+clearly it must be an error, but we don't catch that. 
+
+2 July 2003
+
+* Big improvement in declarations. The problems described in the previous section are solved.
+
+* This statement causes a cascade of errros which seem strange at first:
+typedef m n;
+
+  stdin:(1) : warning: C99 forbids declarations without a specifier
+  stdin:(1) : error: at 'n' : parse error, unexpected identifier
+  stdin:(1) : error: 'm': does not have function type in function definition
+  stdin:(1) : warning: Empty statement at file scope
+
+
+It appears that we think that this is a function declaration. Probably old-style ?
+
+-- Later 
+That is the case indeed. When the error token is shifted it matches "declaration_list"
+which describes an old-style function parameter list.

@@ -1,0 +1,116 @@
+#!/bin/sh
+
+if [ -z "$1" ]; then
+  echo "Must provide compiler and parameters"
+  exit 1
+fi
+
+CC="$@"
+FILE="globconf.h"
+
+cd conftest
+
+echo "// $FILE - generated file" > $FILE
+echo "/*" >> $FILE
+echo >> $FILE
+uname -a >> $FILE
+echo >> $FILE
+echo "*/" >> $FILE
+
+# =================================================================
+#
+# Check for standard headers
+#
+# =================================================================
+
+if ! $CC iso646.c; then
+  echo "#define NO_ISO646" >> $FILE
+fi
+
+if ! $CC stdbool.c; then
+  echo "#define NO_STDBOOL" >> $FILE
+fi
+
+if ! $CC stdint.c; then
+  echo "#define NO_STDINT" >> $FILE
+fi
+
+# =================================================================
+#
+# Check for language features
+#
+# =================================================================
+
+
+if ! $CC restrict.c; then
+  echo "#define NO_RESTRICT" >> $FILE
+fi
+
+if ! $CC restrct1.c; then
+  echo "#define NO_UNDER_RESTRICT" >> $FILE
+fi
+
+if ! $CC inline.c; then
+  echo "#define NO_INLINE" >> $FILE
+fi
+
+if ! $CC inline1.c; then
+  echo "#define NO_UNDER_INLINE" >> $FILE
+fi
+
+if ! $CC longlong.c; then
+  echo "#define NO_LONGLONG" >> $FILE
+fi
+  
+# =================================================================
+#
+# Check for functions and types
+#
+# =================================================================
+
+$CC isblank.c
+if (( $? != 0 )); then
+  echo "#define NO_ISBLANK" >> $FILE
+fi
+
+if ! $CC lldiv.c; then
+  echo "#define NO_LLDIV" >> $FILE
+fi
+
+if ! $CC va_copy.c; then
+  echo "#define NO_VA_COPY" >> $FILE
+fi
+
+if ! $CC strtoull.c; then
+  echo "#define NO_STRTOULL" >> $FILE
+fi
+
+if ! $CC strtoll.c; then
+  echo "#define NO_STRTOLL" >> $FILE
+fi
+
+if ! $CC strtold.c; then
+  echo "#define NO_STRTOLD" >> $FILE
+fi
+
+if ! $CC strtof.c; then
+  echo "#define NO_STRTOF" >> $FILE
+fi
+
+
+if ! $CC atoll.c; then
+  echo "#define NO_ATOLL" >> $FILE
+fi
+
+if ! $CC llabs.c; then
+  echo "#define NO_LLABS" >> $FILE
+fi
+
+if ! $CC exit1.c; then
+  echo "#define NO_UNDER_EXIT" >> $FILE
+fi
+
+cp $FILE ..
+
+cd ..
+

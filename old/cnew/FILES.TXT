@@ -1,0 +1,22 @@
+As detailed as possible descriptions of all files in the project
+=================================================================
+
+  Parser files
+  ============
+c.y, c_tab.c
+  The parser itself
+c_tab.h
+  declares the token codes and the yylval type (YYSTYPE)
+
+  Scanner files
+  =============
+scan.l, scan.c
+
+
+
+
+c-types.c
+c-types.h
+  
+
+

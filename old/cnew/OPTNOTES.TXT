@@ -1,0 +1,13 @@
+1 April 1999:
+
+* We need to compare if a value X is (X >= A) && (X <= B). If
+A and B are within reasonable limits (we shal see what limits...),
+
+  unsigned t;
+  if ((t = X - A) <= (B - A))
+    ok
+
+We use the fact that if X < A, the negative value (X - A) used as
+unsigned will be bigger than (B - A).
+This should be very usefull for switch statements with jump tables,
+when we are checking if the switch value is withing the table limits.

@@ -1,0 +1,1567 @@
+26 March 1999:
+* As of today I consider this project started. Of course I am still
+in the phase when I gather information and think of possible solutions,
+but anyway I think I will be able to start real "hardcode" coding real
+soon. I think I can use the experience I have gathered in SUBC and in
+the previous attempts.
+
+* Here are the guidelines that I have for the new project:
+  - Using C++ and STL. There are too many details in the compiler
+  that are more important than performance. Furthermore I think that STL
+  offers very good performance if used wisely. Of course the compiler
+  won't be able to compile itself, but I can live with it, as long as it
+  compile *anything* :-)
+  As for the compatibilty, I think that C++ and STL are available for all
+  major compilers today (VC, BC, GCC), so I shouldn't have problems porting
+  the source to any of them.
+  I am not going to use templates in the compiler itself. I will also try
+  to avoid advanced C++ features like RTTI, exceptions and even virtual
+  functions.
+
+  - Garbage collection. It seems very tempting. I think I have a good garbage
+  collection library.  The compiler has no threading or any special features
+  that would interfer with it. The memory usage is not critical either.
+  It will simplify the coding tremendously. In the current version I have
+  to keep large linked lists of all items, especially while constructing
+  the syntax trees during parsing.
+  This is still under consideration, but anyway I need a general solution
+  for memory allocation. It will be either a private heap, a garbage collector,
+  a linked list of all allocations, or somethng similar.
+
+  - Good interface. The compiler will be designed as a module (perhaps
+  a DLL), instead of as a standalone executable. This will facilitate
+  further using it from an IDE.
+  Such a decision requires some additional effort because a standalone
+  executable can be easily patched, but I think it is worth it because
+  it will enforce good design. For example arguments/options will have
+  to be passed through a well-defined interface, instead of scattered
+  global variables.
+
+  - Clear distinction between phases.
+  Each phase will be designed, written and tested separately. It will
+  have a clearly defined input and output. When possible this output
+  will also have a file representation.
+  Hopefully this will also allow easier modification of the compiler
+  for other languages (Java, C++?) and CPU-s.
+  These are some of the phases and their interfaces:
+    1) Preprocessor. Initially this will be a separate executable. I will
+    be using GNU-s CPP, which does a good job.
+
+    2) Lexical analyser (scanner) : it will be implemented with FLEX. Of
+    course a manually coded (and tuned) scanner will be somewhen faster
+    (I think that my last scanner was pretty good), but it is not worth the
+    effort at this stage. It is very easy to replace the scanner at any time if it is necessary,
+    because of its simple interface.
+    The input for the scanner is a preprocessed file.
+
+    3) Parser - of course with BISON.
+    It will also perform semantic checks and generate a tree
+    representation of the input program. No pcode or machine dependant
+    information.
+    There will be clearly defined structures for all data definitions,
+    and for the code representation. The goal is to use this representation
+    for other languages. A change in the parser should be most of the work
+    required to implement another language.
+    There will be a file representation of parser's output.
+
+    4) Source optimizer. Perhaps there is a better name for this phase.
+    Anyway, it performs machine independant optimizations over parser's
+    output.
+    This is the place for expression-wide optimizations (constant folding,
+    strength reduction, etc.).
+    The compiler should be able to function without this phase.
+    Note: it will operate on per-file basis, not on per-function or pre-expression
+    basis.
+    Although this is definitely slower, I want fully tested, separated phases,
+    and this is the direct way to achieve this goal.
+
+    5) PCODE generator - generates PCODE in basic blocks.
+    There will be a file representation for its output.
+    May be I shall choose another representation instead of PCODE, perhaps
+    something more like GCC's RTL.
+
+    6) etc, etc
+    Other phases are not so important at this point.
+    If the previous are ready, a simple non-optimizing (but still fully
+    functional) compiler can be constructed for a week.
+    
+* Some optimizations (peep-hole?) and target code generation should be
+table driven. I am thinking of using some sort of descriptive language
+for them and a simple tool to generate CPP source from an input description.
+Of couse I am inspired by GCC's machine description files, but I don't like
+them very much (they don't much my style of thinking), so I am going to
+develop an independant approach. Anyway, I have a lot of time to think
+about this.
+
+27 March 1999:
+* Internal usage of const. It will be applied to all values that
+are const (not to their types). For example an array, a function
+are const values (they can't be modified although they are pointers).
+
+If we have:
+  int array[100];
+The type of "array" should be: "int * const".
+I think there might be modifiers necessary to identify immediate
+constants from constant C declarations. After all "array" in this
+example is semanticly different than
+  int * const array;
+However for semantic checks (for example for assignment) they can
+be considered equal.
+I wonder if we can play with the "l-value" attribute. After all an
+non "l-value" can't be assigned to. On the other hand its address
+can't be taken either while it is legal to take the address of an
+array.
+I suppose there will have to be several additional internal attributes
+like "array","struct",etc. We shall see.
+Have to check the implementation in the new book.
+
+* Today I found something really surprising. It prooved that one can
+never be sure he knows a language even if he has written a compiler
+for it.
+This construct is perfectly legal:
+  switch (x)
+  {
+    case 1:
+      while (x > 0)
+      {
+        --x;
+    case 2:
+        sum ++ x;
+      }
+  }
+The case is jyst a label, and as a label it is valid even inside
+nested blocks. Anyway, not surprisingly SUBC did not compile that. The
+last C51 however did! I will use its grammar file.
+(Don't forget to update the priority of | and &)
+
+
+31 March 1999:
+* Lately I've been wondering whether C++ is a good choice as a
+development language. After all, there is no better test, than to
+compile itself. Also, the compiler doesn't really require C++.
+
+* The garbage collection: I am having second thoughts about it as well.
+
+* Scope problems:
+This must be valid:
+  typedef unsigned UINT;
+  int func ( int UINT )
+  {
+    return UINT - 1;
+  };
+When I think about it, I realize why it is valid. However none of
+the compilers I have written so far accept that.
+There are some other interresting issues like:
+  int func ()
+  {
+  label:
+    {
+      typedef int label;
+      goto label;
+    }
+  };
+
+Obviously the idea is to play with IDENT and TYPENAME symbols
+in the grammar. However I still don't know how I can put a TYPENAME
+in the declaration.
+How about:
+  typedef unsigned UINT;
+  typedef int      INT;
+  void func ( void )
+  {
+    INT UINT; 
+  };
+
+However:
+  typedef unsigned UINT;
+  int func ()
+  {
+    static UINT;
+    return UINT - 1;
+  };
+  is invalid!
+
+1 April 1999:
+* For each type_start item create a separate TTypeNode and then combine
+them into one.
+
+* Added support for trigraphs.
+
+* About program strings. Unlike for identifiers, I can't put a limitation
+on the size of a string. Anywaay, if I think about it, it is not necessary
+and it is even incorrect to keep the program strings as actual C strings.
+Why should these two declarations generate different internal representation?
+char x[] = "abc";
+char x[] = {'a', 'b', 'c', 0};
+
+So, the strings will be handled as any other initialized arrays (I still
+don't know how exactly).
+There is another tempting possiblity: the characters of a string can be
+kept in a linked list, allocating nodes from a FixedHeap. I suppose it
+is not worth it, because the memory overhead is still pretty big, while
+the representation is limited to strings only .. or it isn't?
+
+The general problem now seems to be: how to keep initializers? If they
+were only static initializers, we would make lists of basic types. For
+auto-variables however the initializer may be a complex expression. The
+solution may be to build different initializer structures for static
+initializers and for automatic initializers. This poses the question:
+should we then have different grammar rules for static and automatic
+initializers? I hope not.
+
+* It seems like incomplete type are assumed to have global scope.
+
+This also means that if we have:
+  struct C * p;  // this creates incomplete struct C in global scope
+
+  void func ( void )
+  {
+    struct C
+    {
+      int x, y;
+    } s;
+    p = &s;  // incompatible pointers.  
+  };
+
+func::struct C is different than ::struct C, which is still undefined.
+
+* A question:
+Do we keep a TTypeNode itself describing a struct, and just point to it when
+we use it, or we have a separate struct TTypeNode for each usage, which point
+to the common TStructDef?
+
+suppose we have:
+  struct C {};
+  struct C a, b;
+
+In the first case we have:
+  t1: TTypeNode describing C
+  a points to t1
+  b points to t1
+
+In the other case we have
+  s1: TStructDef describing C
+  a : points to a TTypeNode which points to s1
+  b : points to another TTypeNode which points to s1
+
+Which is better?
+...
+Ok, the solution is obvious. The first is incorrect. We keep storage class,
+qualifiers, etc. in the TTypeNode. However they do not apply to the
+struct definition itself, so it must be separated.
+Here is why:
+  static const struct C {} x;
+  struct C y;
+
+  It creates a "static const struct" typenode (tnode) for x.
+  Although y uses the same struct, it must not be "static const", so
+  it can't use x's tnode.
+
+It turns out that typenodes are pretty much private for each declaration.
+The information that can be reused must be kept elsewhere.
+
+* Ok, I've got another problem. It is with the qualifiers.
+Currently the qualifiers (const/volatile) are in the type-node that
+they apply to. For example if we have: const int x, a type-node with
+"const int" will be created.
+However, if we are using a typedef, we can apply qualifiers to it,
+but we are not allowed to change its type-node. So, how do we do this?
+Example:
+  typedef unsigned char BYTE; // i1:ident(BYTE)->t1:tnode(unsigned char)
+  BYTE x;                     // i2:ident(x)->t1
+  const BYTE x;   ?????
+
+2 April 1999:
+
+* Ok, obviously the last problem from yesterday is the one I thought I
+had solved, by separating the structure definition in a separate
+datum. It is not so. To recapitulate: for structures and typedefs we
+must be able to apply additional storage classes and qualifiers to the
+variable that uses the type, without actually modifying the type. The
+problem is painstakingly obvious for typedefs.
+Example:
+  typedef int INT;  // INT -> tnode(sc:typedef, bt:int)
+  extern INT x;            // should be: x ->tnode(sc:extern, bt:int)
+
+We have a conflict here: how can we store the typedef storage class
+and the extern storage class in one and the same typenode? We can't.
+We also can't make a TYPEDEF tnode that just points to actual
+typedef, because we want to treat declarations with directly defined
+types in the same way we treat declarations that use typedef-s.
+
+So, the obvious solution is: separate the qualifiers and storage class
+in a separate datum. This will also allow us to merge the structure
+definition in the tnode.
+
+The storage class applies only to the actual symbol. The qualifiers
+however are "carried" within the typedef (but not within the structure).
+
+Here is the final solution:
+Each symbol has a storage class (in fact it will be best to
+store the storage class in the symbol's structure). This storage class
+has nothing to do with symbol's type, which is completely independant.
+This way we have:
+  typedef const int CINT;  // CINT:typedef -> whatever
+  extern volatile CINT x;  // x:extern     -> whatever
+
+The other problem that remains is the qualifiers. A symbol's qualifier
+obviously is a combination from the specified qualifiers and the qualifiers
+of the typedef. For starters, lets assume that we keep each qualifier in
+a separate node:
+  typedef const int CINT; // CINT:typedef -> q1:qnode(const) -> t1:tnode(int)
+  extern volatile CINT x; // x:extern     -> qnode(volatile) -> q1
+
+What about structures? They do not carry any qualifiers. So, again for
+starters, we can assume them to be represented in this way:
+
+  static const struct C {} x; // x:static->qnode(const)->t1:tnode(struct C{})
+  extern volatile struct C y; // y:extern->qnode(volatile)->t1
+
+There is no immediate need to separate the structure definition from the
+tnode (although it may turn out to be convinient).
+
+The only remaining problem is the linked list of qnode-s. There may be no
+qnode-s, may be one or two, in any order. It is dfficult to analyze and
+support. It would be much better if the structure was more "linear".
+So, we assume the following:
+  - each qnode can contain any combination of qualifiers (including none).
+  - each tnode is always preceeded by a qnode, even if the qnode is empty
+  - when using a typedef:
+      typedefname:typedef -> q1:qnode(..) -> t1:tnode(..),
+    we create a new qnode() that is a combination of the identifier's qnode
+    and the typedef-s qnode. Then we point it to the typedef's tnode (in
+    this case t1).
+    Example:
+      typedef const int CINT; //CINT:typedef ->qnode(const) ->t1:tnode(int)
+      extern volatile CINT x; //x:extern ->qnode(const,volatile) ->t1
+
+It remains to be seen how this structure must be altered for easier
+handling of types during parsing.
+
+* The attributes will also be kept in the qnode.
+
+* Where to store the bitfield size? There are two alternatives:
+in the symbol or in the type.
+Obviously the reasonable place is inside the typespec, because we
+want to be able to pass bitfield info without the symbol itself.
+
+* Finally, the type system (at least the data structures it uses)
+seems to be getting near the finishing point. As soon as I got over my
+prejudice to allocate every tiny bit of info separately, it tuend out
+to be relatively simple. This time I am confident that the structure
+will be able to handle the full C type system without problems.
+The functions seem a little unclear yet - the disctinction between
+old/new-style functions, implicit/explicit function declarations, etc.
+Anyway, this is not very important.
+
+* Now I have to come out with a way of representing values. The next
+step after that will be represening initializers, and a way to keep
+them.
+The first thing that comes in mind is a structure containing the value
+and associated type. Actually, the "value" structure must be designed
+in the context of the "tree" representation of expression. This is a
+more complex matter.
+
+* I made the description of expression codes more formal (see c-tree.def).
+Each expression code has a structure describing it - for example number
+of arguments, its name, various flags. The idea is to make the semantic
+analysis and some optimizations using these flags.
+The only flag I've come up with so far is EF_ADD. It shows that the arguments
+of a binary operator can be safely exchanged (e.g. '+', '*', '|', etc.).
+I have ideas for a lot more :-) :
+  - whether it requires l-value in an operand
+  - whether the lvalue is transferred into the operator itself
+  - whether it requires integral operands
+May be separate flags for each operand will be required? These will
+show up when I start actually building the expression trees.
+
+* How do we store lists of initializers. The problem is that we don't want
+to consume stack space by using right recursion. Unfortunately left recursion
+leads to unnatural representation.
+(This also applies to literal strings returned from the scanner)
+
+For:
+  a, b, c, d
+the "natural" representation is:
+  +---+---+---+--
+  |   |   |   |
+  a   b   c   d
+
+(a, (b, (c, (d, nil))))
+
+How do we build it without right recursion???
+This is the best (and the standard) way to parse a list without wasting
+stack space:
+  list
+    : list ',' item
+    | item            
+    ;
+Using this form, the desired representation can't be built effectively,
+because we have to know both the start of the list (to return it eventually
+to the caller of `list') and the end of the list (to attach new items to it).
+Of course this can be achieved by using global variables, but we don't want
+to do that.
+
+We define a new ternary expression code: e_list.
+The first operand points to an item of the list, the second points to
+the next e_list (if any), the third points to the last item in the lest
+(where new elements must be attached). 
+
+  list
+    : list ',' item
+      {
+        $1->a3->a2 = $3;  // attach the new item to the end
+        $1->a3     = $3;  // modify the end to point at the new item
+        $$ = $1;          // return the original start
+      }
+    | item            
+    ;
+  item
+    : ITEM  { $$ = alloc( e_list, $1, NULL, NULL ); $$->a3 = $$ }
+
+* When constructing the representation of a function. We use
+a special operator code `op_decl' in places where variables are
+declared. It will contain a list pointing to all declared variables
+in that position. Its purpose is to record where the variables begin
+theie existence and also to show what initialization
+expressions must be executed.
+
+* There must be several predefined and preallocated types.
+For example a numeric constant has type: "const int". We need
+not allocate it each time.
+
+
+8 April 1999:
+* I wonder if it is safe to use _yytext_ in the grammar. I mean
+perhaps yytext will have been changed, because the parser may have
+extracted the next lookahead symbol. Here is an example of what I mean:
+  rule
+    : IDENT { printf( "%s", yytext ) } ':'
+    ;
+Is it possible yytext to be overwritten with the next character (the ':').
+Perhaps not in this case, but in some other?
+Have to think about it.
+It is tempting to let the scanner allocate a new TSymbol for each undefined
+symbol it finds. This way we will not have to rely on yytext. However this
+poses lots of other problems.
+
+* Ok, after a little investigation, here is what I got. This is a simple
+grammar describing a list:
+  list : IDENT | IDENT ',' list ;
+If we want to use _yytext_ to print the name of IDENT, we could write this:
+  list : IDENT {puts(yytext)} | IDENT {puts(yytext)} ',' list ;
+Well, it doesn't work, because the parser needs one look-ahead token in
+order to determine which rule to parse. So the value of yytext is lost
+at the point we want to print it.
+If we modify it in this way:
+  list : id | id ',' list ;
+  id   : IDENT {puts(yytext)} ;
+it works. The parser reduces _id_ before it needs a look-ahead token, so
+the value of yytext is still valid.
+It seems that this is risky and it would work only for a LALR(1) parser.
+If it were a real LR(1), the parser would always need one look-ahead token.
+I still have to find a formal way to check if my grammar is safe in this
+regard.
+I still hesitate whether I should rely on this, or "play it safe" and
+allocate a structure in the scanner for each new identifier. It seems
+difficult to allocate a "generic" identifier structure, because it
+will still have to carry the information about the identifier, that we
+need to know.
+I suppose I will use yytext directly ... :-(
+
+* What if I allocate a separate THashEntry, and bind it to the symbol?
+typedef struct THashEntry
+{
+  TListEntry    hashLink;
+  char          * szName;
+  unsigned      nameHash;
+
+  struct THashEntry * nextLocal;   // next symbol in the same scope
+  struct TScope     * parentScope; // the scope itself
+
+  union
+  {
+    TSymbolDef * pSymbol;
+    TStructDef * pStruct;
+    TLabel     * pLabel;
+  } bind;
+} THashEntry;
+
+If bind.pXXXX is NULL, this is a new symbol. 
+
+* I've implemented a new module (CONSTSTR.C) that keeps a list
+of reference counted strings. This way I can:
+  - free them all at once on exit
+  - Copy names of identifiers very fast. 
+
+* After a little head scratching I realised that the scanner MUST NOT
+allocate a new TIdent structure for each new identifier it doesn't find
+in the hash table.
+If it were this way, it would have to allocate a new TIdent(and the
+associated strings) for each used structure member or label for example.
+So, for now there is no other feasable solution, but to be careful with
+yytext.
+
+9 April 1999:
+* Well, since the scanner is no more going to allocate TIdent's for
+new symbols, the TIdent structure is no longer necessary as such.
+However it seems that is is convinient enough for encapsulation, so I
+will embed it in TSymbol and TStructDef (hopefully later I will use it
+for labels as well).
+
+* Perhaps the hash table must be more flexibly parametrizable because
+I will want to use it for labels inside a function. A hash table with
+4096 entries is far too much for the identifiers in a single function,
+so I must provide a way to specify the size.
+
+* I made speed evaluation of memcmp and strcmp for VC and BCC with
+different optimizations. Here are the results:
+  // VC, O1
+  strcmp: 3082.614057 iters per ms
+  memcmp: 5146.680391 iters per ms
+
+  // VC, O2
+  strcmp: 3516.174402 iters per ms
+  memcmp: 3211.303789 iters per ms
+
+  // BCC, O1
+  strcmp: 1642.305797 iters per ms
+  memcmp: 3977.724741 iters per ms
+
+  // BCC, O2
+  strcmp: 3361.344538 iters per ms
+  memcmp: 3979.307600 iters per ms
+
+memcmp() is always faster for BCC. (Actually the out-of-line Borland's memcmp
+is faster then their inline strcmp!)
+For VC, the out-of-line memcmp is significantly faster than anything else
+(including any Borland function).
+So, it is obvious that for maximum performance, we must compare strings which
+lengths we know with memcmp(), using the out-of-line version.
+
+* When parsing the declaration start, it is very difficult to build directly
+a TQualNode and a TTypeNode. We must build an intermediate structure first.
+It must keep info about all things that can be parsed in type_start:
+  TYPESPEC // int,char,void,short,long,signed,unsigned,double,float
+  SCLASS   // typedef,auto,extern,register,static
+  DECLSPEC // a combination of declspec flags
+  TYPEQUAL // const,volatile
+  TYPENAME // a typedef-ed identifier
+  struct_spec // declaration of a struct/union/enum
+
+  {
+    // TYPESPEC
+    enum BASIC_TYPE  basic : BASIC_TYPE_BITS;
+    unsigned       isSigned    : 1;
+    unsigned       isUnsigned  : 1;
+    unsigned       isShort     : 1;
+    unsigned       isLong      : 1;
+
+    //DECLSPEC
+    unsigned       declspec    : DECLSPEC_BITS;
+
+    // TYPEQUAL
+    unsigned isConst    : 1;
+    unsigned isVolatile : 1;
+
+    //SCLASS
+    enum INFO_TOKEN sclass;
+
+    // TYPENAME
+    TSymbol * typename;
+
+    // struct_spec
+    TStructDef * structDef;
+  }
+
+* How do we save enum values?
+Perhaps as idents with apropriate type and storage class.
+
+* _cdecl, _pascal, _stdcall, _far, _near, etc. will all be encoded
+through attributes:
+  __attr( x )
+
+
+* It seems that I need yet another temporary structure to be used during
+parsing. It must keep the identifier and the end of the type of the
+currently parse declaration. Here is how I see it:
+  {
+    TSymbol * declIdent; // the ident that is being declared
+                         // its type is still not attached
+                         // This is always! a newly allocated ident
+    TYPE * type;         // first node of the type
+    TYPE * etype;        // last node of the type
+
+    TQualNode * attrs;   // attributes that must be applied to
+                         // type_start
+  }
+
+The final (deepest) production of _decl_ allocates this structure (which
+will be called TDeclData), and the other rules use it to attach nodes to the
+type.
+
+12 April 1999:
+* Here is the latest major problem. There is no easy way to pass the
+type specifier (the start of the declaration - type_start) to the rest
+of the productions that parse the declarators.
+In the following example:
+  int * p = 10, k = 20;
+The type specifier (type_start) is "int" and the declarators are
+"* p", and "k". What is worse: we have initializers here, and we need
+to know the type specifier, so that we can check the initializers
+while we process them. In the latter example we must issue an warning
+when assigning 10 to "int *". Here is a simplified version of the grammar:
+  global_decl
+    : type_start decl_list ';'
+    ;
+  decl_list
+    : decl_list ',' decl_or_init
+    | decl_or_init
+    ;
+  decl_or_init
+    : decl           { need type_start's result }
+    | decl '=' init  { need type_start's result }
+    ;
+type_start returns the type specifier. How do we pass this specifier
+to the rules below, so that they can make the necessary semantic checks?
+(Of course, in theory we could just save everything we parse until we
+finish the entire declaration, and just then build the complete types
+and verify the initialiers - this would delay the errors too much)
+
+There is one interresting possibility. In theory a rule could access
+the vakue stack outside of its context. decl_list could access the
+return value of type_start!
+It works!!! The values up the stack are accessible with $N when N <= 0.
+Is this the correct way to do it? It seems tempting.
+Here is the modififed grammar from the example:
+  global_decl
+    : type_start decl_list ';'
+    ;
+  decl_list  // type_start = $0
+    : decl_list ',' {$$ = $0 /*copy type_start*/} decl_or_init
+    | decl_or_init
+    ;
+  decl_or_init  // type_start = $0
+    : decl           { use $0 }
+    | decl '=' init  { use $0 }
+    ;
+This seems like a solid way to pass "arguments" to rules.
+
+13 April 1999:
+* Ok, type_start is now accessible to the declarations through
+the method described earlier.
+Now I have to write the actual declaration of variables. Here
+are some things to consider:
+a) Different scopes allow different declarations:
+  - struct scopes allow no storage classes, no initializations
+  - all the rest allow no bit fields
+  - function argument scopes don't allow initializations
+  - functions can only be SC_EXTERN, SC_STATIC or SC_TYPEDEF
+  - functions declared in local scope can't be SC_STATIC
+  - variables in a global scope can't be SC_AUTO or SC_REGISTER
+  - arguments can only be SC_AUTO or SC_REGISTER
+  For all storage classes except SC_TYPEDEF:
+  - the type can't be void
+  - if the type is structural it must be defined
+
+  Other illegal declarations:
+  - function returning function, array
+  - array of function
+  - array of void
+  - array of array[]
+
+b) Redeclarations are valid in C. We must take care of them. Here is why:
+  void * a;
+  void * b = &a;
+  void * a = &b;
+  This is not allowed in a struct scope however!
+
+
+14 April 1999:
+* I am trying to sort the requirements that I wrote yesterday:
+
+struct_scope:
+  - No storage specifiers are allowed
+  - Functions are not allowed
+  - Initializations are not allowed
+  - Bit fields are allowed
+  - structs declared inside a struct scope, receive the first
+  non-struct scope up the scope chain.
+
+file_scope:
+  - Bit fields are not allowed
+  - storage class AUTO and REGISTER are not allowed
+    (only SC_TYPEDEF and SC_FIXED)
+
+func_arg_scope:
+  - Bit fields are not allowed
+  - initializations are not allowed
+  - only IMPLICIT, AUTO and REGISTER storage class is allowed
+    (only SC_AUTO and SC_REGISTER)
+  - functions and arrays are converted to pointers (? how ?)
+
+function_scope:
+  - Bit fields are not allowed
+  - static functions are not allowed
+
+
+the VOID type: It is allowed only for:
+  - target of a pointer
+  - the type in a TYPEDEF ("typedef void VOID;")
+  - return value of a function (this is a special case)
+  - the only argument of a function (this is a special case)
+
+incomplete structs:
+  - allowed as a destination for a pointer
+  - allowed as a return value of a function in function declaration
+    ( but not in the body of the function)
+  - allowed as a type for extern and typedef definitions.
+  To recapitulate: they are allowed whenever we don't need to know
+  the size of the structure in order to finish the declaration.
+
+functions:
+  - functions can only be EXTERN, STATIC or TYPEDEF
+    (only SC_FIXED or SC_TYPEDEF)
+  - for its definition, however the function must be SC_FIXED :-)
+  - can't return arrays
+  - can't return other functions
+  It seems that we need another type attribute: function, array and
+  void don't have it, the rest of the types do.
+  They all are can be lvalues (their address can be taken), but they can't
+  be assigned to. Or may be being an lvalue means something else?
+
+arrays:
+  - array of function is illegal
+  - array of array[] is illegal
+  - array without size is valid only for the first dimension, if this
+    is the first node in the type chain, and only if it is initialized.
+
+pointer:
+  - pointer to function is legal
+  - pointer to void is legal
+  - pointer to incomplete struct is legal
+  All of these rules can be deduced from the rest.
+
+bit_fields:
+  - bit field must be of integral type
+  - Width of bit field must be <= TARGET_INT_BITS
+
+These are too meny rules. I think there should be a consistent logical way
+of checking them in a general way. I should describe the way of thinking I
+used to generate these rules on the first place. Then I should use this
+way of thinking directly to verify the declarations.
+
+Have to read the standard.... (I have the C++ standard, but it should suffice)
+
+15 April 1999:
+Notes from the C++ standard     (I have noted the sections)
+============================
+
+1.3.1 An "argument" is the expression that is passed to the
+function. For example if we have a function f(int), and we call it
+"f(x+y)", then "x+y" is the argument.
+An argument is different from a "parameter" - see below
+
+1.3.9 Parameter: this is the "formal parameter" of the function. If we
+have "f(int par)", "par" is the parameter.
+
+Have to update the non-terminal names in the grammar to reflect this
+convention.
+
+1.6#2 Here are some conventions used in the standard's notation that I
+like. I will implement them in the grammar:
+  X_name : use of an identifier in a context that determines its meaning
+  (e.g. class_name, typedef_name)
+  X_id : identifier with no context depending meaning (e.g.
+  qualifier_id)
+  X_seq : one or more X's without intervening delimiters
+  X_list : one or more X's separated by intervening commas.
+I have a few conventions of my own that I like:
+  optional_X : means one or zero occurences of X
+  _X : means a non-terminal symbol that is a synonym of X in the
+  grammar, but it is needed to provide some semantic action around X.
+
+1.9#7 Accessing a volatile object (not only modifying) is considered a
+sequence point.
+
+1.9#15 It seems to be valid to exchange the order of operands of a
+commutattive operator (+,|,*), if the target machine would generate
+the same result as the initial expression. If we have (a+b)+c, on any
+machine I know it can be computed as a+(b+c) or even (c+a)+b for
+example without changing the result. (If the machine generated
+exception on integer addition overflow it wouldn't be possible)
+
+This also applies to associative operators. However lets apply the
+previous example to the division a/b/c. The correct order ov
+evaluation is: (a/b)/c. Although it may seem right to calculate
+(a/c)/b, it is not allowed because we might get an overflow exception
+which doesn't occur for the first case (in theory).
+
+1.9#17: Sequence points when calling a function:
+- after evaluating all of the arguments
+- after the copying of the returned value and before evaluating any
+expression outside of teh function.
+
+2.13.1#2 Type of integer constants. A constant depending on its radix
+and suffix receives the first of a sequence of types in which it can be
+represented.
+  decimal, no suffix : int, long int  
+  oct/hex, no suffix : int, unsigned int, long int, unsigned long int
+  any, suffix U : unsigned int, unsigned long int
+  any, suffix L : long int, unsigned long int
+  any, suffix LU : unsigned long int
+This makes perfect sense and kind of clears it out.
+
+In C, ahy character constant has type int.
+In C++ a single char constant has type char, a multi-char character
+constant is int.
+
+2.13.3#1
+A floating point constant is of type double if it has no suffix.
+A suffix F denotes type float, L denotes long double.
+
+3.1#2 What is a declaration and what is a definition.
+A declaration is a definition unless any of these is true:
+- declares a function without function's body
+- contains an extern specifier or ??linkage specification? *and*
+neither an initializer nor a function body!
+- it is a class name declaration: "struct X;"
+- it is a typedef declaration
+
+3.1#6 A definition of an object can't give it an incomplete type (I
+think VOID is also an incomplete type)
+  see 3.9#6
+
+3.2#4 *Exactly one* declaration of a class/struct is required in a
+translation unit if it is used in a way that requires the class/struct
+type to be complete.
+A class type T must be complete if:
+- An object of type T is defined
+- ??an lvalue-to-rvalue conversion? is applied to an lvalue refering
+to an object of type T.
+- an expression is converted to type T
+- sizeof() is applied to operand of type T
+- A function with a return value or an argument of type T is defined
+or called
+- An lvalue of type T is assigned to
+
+3.3.1#1 The _point of declaration_ of a name is immediately after its
+complete declarator and before its _initializer_.
+Example:
+int x = 12;
+{ int x = x; };
+Here the second x is initialized with its own (indeterminate) value
+because it is already declared before the initialization.
+
+3.3.1#2 A non-local name remains visible up to the point of
+declaration of the lcoal name that hides it:
+const int i = 10;
+{ int i[i]; } is valid.
+
+3.3.1#3
+The point of definition of an enumerator is after its value is set.
+E.g:
+const int x = 10;
+enum { x = x };
+The second x is not yet defined, until it is initialized, so it
+assumes the value of the first x, which still hasn't been hidden.
+
+3.9#6
+A class that has been declared but not defined or an array of unknown
+size is an _incompletely-defined object type_. The size and layout of
+its instances are unknown. Incompletely-defined object types and
+_void_ types are _incomplete types_.
+Objects can not be defined with an _incomplete type_.
+
+3.9#9 An _object type_ is a type that is not a function or void.
+
+3.9#10 Arithmetic types, pointers and enums are called _scalar_ types.
+Scalar types, POD-structs/unions are caled POD-types.
+I need a new type attribute: scalar!
+
+3.9.1#7 C++ bool is an integral type as well (well this makes perfect
+sense)
+
+3.9.1#8 integral and floating point types are collectively called
+_arithmetic types_.
+(Add a new attributes isArith?)
+
+3.9.1#9 An expression of type (void) can be used only as:
+- expression statement
+- operand of comma expression
+- second or third operand of ?:
+- as an expression in a return statement in a function returing void
+!? (this doesn't work in the compilers I have)
+
+
+* Allowed combinations of operands for additive operators:
+  arithmetic + arithmetic
+  scalar + integral
+  integral + scalar
+  arithmetic - arithmetic
+  scalar - integral
+  scalar - scalar
+
+  aa|si|is
+  pi|pp
+
+* Allowed combinations for *,/
+  arithmetic OP arithmetic
+
+  aa
+
+  Allowed combinations for %
+  integral % integral
+
+  ii
+
+* Allowed for << >>
+  integral OP integral
+
+  ii
+
+* Allowed for relational and equality operators
+  arithmetic OP arithmetic
+  pointer OP pointer
+
+  aa|pp
+
+  pointer == 0
+  pointer != 0
+
+  p0
+
+* Allowed for bitwise operators
+  integral OP integral
+
+  ii
+
+* Allowed for logical operators
+  scalar OP scalar
+
+  ss
+
+
+* Allowed for simple assignment
+  arithmetic = arithmetic
+  pointer = pointer
+  pointer = 0
+  class = class
+
+  laa|lpp|lp0|lcc
+
+* Allowed for +=, -=
+  arithmetic OP arithmetic
+  scalar OP integral
+
+  laa|lsi
+
+* Allowed for compound assignments
+  arithmetic OP arithmetic
+
+  laa
+
+* ?: operator
+scalar ? scalar : scalar
+scalar ? class : class
+scalar ? void : void
+
+  sss|scc|svv
+
+* subscript operator
+pointer [ integral ]
+integral [ pointer ]
+
+  pi|ip
+
+* May the allowed combinatins of operand types can be encoded in 
+c-tree.def using strings. For example + can be described as:
+  "aa|si|is"
+These are the suggested letter codes:
+  a : arithmetic
+  i : integral
+  s : scalar
+  p : pointer
+  c : class
+  v : void
+  0 : the integral constant 0
+  l : this is a prefix, meaning that it requires an lvalue
+
+It is not necessary to apply these to each separate operator. 
+First of all we can split the operators into cathegories with
+similar requirements.
+
+
+It is interresting whether I will be able to supply information 
+about operator argument type conversions and the type of the
+result returned.
+
+Some operators perform _integral promotion_ of their operand(s),
+others use _arithmetic conversions_. In the first case the result
+type can be one of the operands (I think it is always the first),
+in the second case, the result type is the common type of the
+_arithmetic conversion_.
+
+* Integral promotion:
+It applies to char,short int,enum and bit-fields. The operand is 
+converted ot int or unsigned int (if int can't hold the full range
+of operand values). If the argument is long, nothing is changed.
+Note: the integral promotion always preserves the value, although
+it may change the "signedness" of the argument.
+
+After applying _integral promotion_ to integer argument, it can be 
+only one of: int, unsigned int, long, unsigned long.
+
+* So, we have the following cases:
+1) Perform _arithmetic conversion_ on both operands. The type of any
+operand is now the result type of the expression.
+  
+2) Perform _integral promotion_ on both of the operands. The type of the 
+first operand (it may be the only operand) is the type of the
+result.
+
+3) One operand is a pointer. Perform integral promotion to the other 
+operand. The result type is the type of the pointer operand.
+
+
+Let's introduce a new character in the notation 'I', meaning
+_integral promotion_ (of course it requires the argument to
+be of an integral type). 
+
+Here are the new operator rules (from above)
+
+
++
+  aa|sI|Is
+
+-
+  aa|sI|ss
+
+* /
+  aa
+
+%
+  ai
+
+<< >>
+  II
+
+< > <= >=
+  aa|pp
+
+== != 
+  aa|pp|p0
+
+| & ^
+  ii
+
+
+&& || 
+  ss
+
+
+=
+  laa|lpp|lp0|lcc
+
++=, -=
+  laa|lsi
+
+*= /=
+  laa
+
+%=
+  lai
+
+&= |= ^= >>= <<=
+  lii
+
+?:
+  sss|scc|svv
+
+[]
+  pI|Ip
+
+unary + -
+  I
+
+!
+  s : int (bool?)
+
+~
+  I 
+
+++ --
+  ls
+
+16 April 1999:
+* Note! Even if a struct is not const, it can't be assigned to as an lvalue
+if at least one of its members is const. This rule is recoursively appliable.
+It would be too slow to check all members when we are assigning an entire
+struct, so I am adding a new flag in TStructDef: hasConstMembers;
+
+*
+Any declaration is a definition unless any of these is true:
+- declares a function without function's body
+- contains an extern specifier or ??linkage specification? *and*
+neither an initializer nor a function body!
+- it is a typedef declaration
+- it is a class name declaration: "struct X;"
+It seems that until we encounter the "function body" or the
+"initializer", we consider a potential definition to be a declaration.
+It is ok: a definition is more restrictive, so we just make a few more
+checks as soon as we determine that a declaration is a definition.
+
+struct_scope:
+  - No storage specifiers are allowed
+  - Functions are not allowed
+  - structs declared inside a struct scope, receive the first
+  non-struct scope up the scope chain.
+  - only declarations (no definitions) are allowed
+    (but this is a result from the other rules)
+  - duplicate declarations are not allowed
+  - Initializations are not allowed
+  - Bit fields are allowed
+
+file_scope:
+  - storage class AUTO and REGISTER are not allowed
+    (only SC_TYPEDEF and SC_FIXED)
+  - duplicate declarations (and definitions) are allowed
+  - Bit fields are not allowed
+
+function_scope:
+  - static functions are not allowed
+  - duplicate declarations are not allowed
+  - Bit fields are not allowed
+
+func_arg_scope:
+  - only IMPLICIT, AUTO and REGISTER storage class is allowed
+    (only SC_AUTO and SC_REGISTER)
+  - functions and arrays are converted to pointers (? how ?)
+  - duplicate declarations are not allowed
+  - Bit fields are not allowed
+  - initializations are not allowed
+
+
+incomplete type is:
+  - void
+  - forward ref of a class/struct/union/enum
+  - array withou size
+(The function IsCompleteType() verifies this)
+
+A definition can't give an object an _incomplete type_!
+
+the VOID type is allowed for this special cases:
+  - the only argument of a function
+
+functions:
+  - functions can only be EXTERN, STATIC or TYPEDEF
+    (only SC_FIXED or SC_TYPEDEF)
+  - for its definition, however the function must be SC_FIXED :-)
+  - functions can only return VOID, SCALAR or CLASS.
+
+arrays:
+  - array's type can only be: SCALAR, CLASS or ARRAY[with known size]
+
+bit_fields:
+  - bit field must be INTEGRAL and COMPLETE type (not fwd decl of enum)
+  - Width of bit field must be <= TARGET_INT_BITS
+
+* How do we handle duplicate declarations?
+If they aren't allowed we produce an error as soon as find the same
+idenitifier declared in the same scope.
+
+If they are allowed we must check if the type is the same.
+Only one declaration can have initializer.
+
+26 April 1999:
+* Here is how to avoid using static variables exported from the scanner
+(in particular the identifiers).
+Keep a global table of all identifiers regardless of their scope, type, etc.
+Once an identifier enters the table it is never removed from there (perhaps).
+The scanner always looks up any identifier there (again: regardless of type,
+scope, etc), if it isn't present adds it, and in all cases returns just a
+pointer to the ident in the table. 
+
+Have to think about this, but it looks good. It is interresting how it
+will interfere with the other hash tables and whether they are necessary at
+all.
+
+28 May 1999:
+
+* After considerable though I decided that no tree codes should be
+represented by plain ASCII characters - this is non-portable (?) and
+non-consistent.
+We need a consistent, formal representation of everything.
+...
+Well, after looking at "c-tree.def", it turned out that I have already
+designed it that way. Oh, well ..(:-), the important idea that I hadn't
+figured out when I wrote "c-tree.def" is that we need a consistent
+representation for all of the AST - the exressions *AND* the other
+constructions.
+
+4 June 1999 (AM):
+
+* Perhaps we could change the representation of trees. Currently we
+have implicit fetching of all identifiers and explicit fetching of values
+through pointers.
+Another possibility is to have an explicit "fetch" code for *any* load
+from memory. Example: "a + b"
+Currently we have: e_plus( e_id(a), e_id(b) ). In this case e_id()
+implies fetching.
+Here is how this could be exressed with explicit fetching:
+  e_plus( e_fetch(e_id(a)), e_fetch(e_id(b)) )
+In this case e_id() is just the address of the symbol. From some point of
+view it is more logical. Let's extend this to pointers:
+  "a + *p"
+  In the old way:  e_plus( e_id(a), e_deref(e_id(p) )
+  In the new way:  e_plus( e_fetch(e_id(a)), e_fetch(e_fetch(e_id(p)) )
+Obviously the latter is more consistent albeit slightly different from the
+normal "C" semantics. We must consider that in RISC an explicit fetch is
+necessary for variable accesses anyway, so the second from is closer to
+to RISC. In CISC (e.g. 80x86) a variable is accessible directly and perhaps
+this has affected me in the initial design.
+
+We could provide several forms of the "fetch" operator. One for accessing
+constant addresses (for example global variables), one for accessing any
+address (that is indirect access through a pointer) and one for accessing
+an address that doesn't change in the scope of the current function (for
+local variables).
+
+I am starting to bend towards the new representation. Consider this
+example:
+  "*dest = a + *src"
+  e_assign(
+    e_fetch(e_id(dest)),
+    e_plus(
+      e_fetch(e_id(a)),
+      e_fetch(e_fetch(e_id(src)))
+    )
+  )
+
+It is very consistent and provides precise semantic context. Note: l-values
+and r-values are clearly distinguished not by the context but by the operation!
+The rules are perfectly clear: for example  e_assign() requires an address
+as its first operand. For example: "a = b + c" is
+  e_assign( e_id(a), e_plus( e_fetch(e_id(b)), e_fetch(e_id(c)) );
+Totally consistent! No more implicit l-value to r-value conversions!
+
+4 June 1999 (PM):
+
+* There are two problems in the type system and the symbol table that I
+have to solve:
+  - redeclarations in global scope
+  - functions with all details: imlicit declaration, redeclaration,
+    keeping the arguments, declaring the arguments in the current scope
+    when we are in the body of the function
+
+Ok, first lets look into the redeclarations. What is a valid redeclaration?
+(Note that struct redeclarations have already been handled.)
+  - it is allowed to make multiple "declarations" of something as long as
+  the type is the same and the storage classes are not confliciting (eg static
+  and extern)
+  - It is also allowed to have multiple declaration and maximum one definition.
+  - the types must be the same
+  - the storage classes (enum STORAGE_CLASS) must be the same
+  - must be careful: implicit(old-stfyle) redeclaration of a new-style
+  function *must not* override the previous declaration.
+
+  - these are valid combinations of output classes (if they are different):
+     none/static 
+     static/none
+     extern/none
+     none/extern
+  So, it seems that the outut classes must be either the same, or
+  at least one of them must be none. (None means OC_PUBLIC).    
+
+Ok, after we have determined (hopefully) that a re-declaration is valid,
+we must somehow combine the output classes and other information (what?)
+into one and free the rest. For example if we have "int x; static int x;",
+the second definition must override the output class of the first.
+If it were the opposite however, it should not. As a general rule we might
+say: Any output class overrides the NONE class (SC_PUBLIC)
+
+In case of explicit function declaration overriding an implicit one, we must
+also change the type.
+
+
+6 June 1999 (AM):
+* Must be careful. Sometimes although a declaration is legal, its use
+may be illegal because the size of a type is (still) unknown. An obvious
+example is using (incrementing or dereferencing) a pointer to undefined struct.
+A less obvious one is using a pointer to an unsized array.
+
+* Forgot to process the case of a function with "void" parameter list.
+This is a special case because it is the only case where we have a
+declaration of void object (anonymous). It would be best if this could be
+handled in the parser, but I doubt it is possible to achieve without conflicts.
+
+!!! Surprisingly I managed to make this in the parses only. Only a couple
+of more rules.
+
+* Although I need to parse expressions in order to 100% complete the
+type system, I think it can be reasonable complete and tested even without
+expressions. For example I have patched the arrays to use a hard-coded
+dimension of one. It should be easy to use the expressions later when they
+are ready. What remains to be done is ENUM and then the rest of decl_xxx
+productions.
+
+* So, how do we represent an enum?
+Each value will be a variable with storage class SC_CONSTANT.
+The numeric value will be stored in the init member.
+The rest is the same as structs.
+
+* I wonder whether declaration like this is legal:
+struct;
+
+VC accepts it. It doesn't make sense. I checked the C9X draft, it doesn't
+allow it, so I am not going to either.
+
+* Have to add the _Bool type.
+Funny, it turned out that I have already everything necessary for bool,
+except parsing it (which is just a minor update by itself).
+
+* As I think about it, now is the time to make the foundations for support
+of integer types different than char,short,int,long.
+Good ones are: __int8, __int16, __int32, __int64, __int128.
+Another possibility is to use the "long long" approach, but I don't like it.
+The question is : how will the arithmetic conversions work on these types?
+Do we translate them to the standard types or vica-versa?
+
+29 July 1999:
+
+* Use arenas?
+
+* How about a global ident (or even string) table? Like the one used
+by Frazer&Hanson. Any identifier (or string?), no matter of its context,
+ever used in the program goes into the table for ever. If we want to be strict
+we could apply reference counting, so an identifier could eventually be pulled
+out of the table.
+How will this affect the speed?
+Should we put all strings in this table, or just the identifiers? There are
+two separate views on this approach: the table is either just a holder for
+string values or a kind of "global" identifier table.
+
+* I implemented the arena. It looks good. Perhaps it could replace the
+fixed heap allocators for some things (or even for most things!). It changes
+the whole idea of allocating. Have to think about it (check the book).
+
+* I started writing the strings table, but came to a problem. The strings
+uses a normal hash table that operates with strings. The other hash tables
+however (the ones that keep identifiers, structs, etc.) should operate with
+the new type STRING (an element in the strings table) because comparing for
+equality is extremely fast (just compare two pointers).
+  Or should we use another approach? After all we have already located the
+string? Can't we just attach different meanings to it? If we reverse the
+problem it could be: instead of checking whether a string is in a hash
+table (which represents a cerain cathegory), we could check whether a
+cathegory is attached to a string. Here is an example of the two approaches:
+
+We have the following symbols:
+  X, Y - identifiers
+  X, Z - structures
+
+1-st approach (standard):
+  StringTable: X=1, Y=2, Z=3
+  IdentTable:  1, 2
+  StructTable: 1, 3
+
+  So, first we search the string table. Then we search the other two
+  tables in order to determine its cathegory.
+
+2-nd approach:
+  IdentCathegory = 1
+  StructCathegory = 2
+
+  StringTable: X(1,2), Y(1), Z(2)
+
+  We search the string table. Then we just chech which cathegories
+  the located string possesses. Assuming that the cathegories are a finite
+  and quite small number, this will be very fast.
+
+The second approach looks good. Lets see what the cathegories could be:
+- symbol
+- struct/union/enum
+- typename
+They can be represented with pointers to data associated with the cathegory.
+Intriguing! We will have only one hash table in that case. As a consequence
+there will be no more need to worry whether the grammar processes the identifiers
+in time (before the static buffer is overwritten).
+
+30 July 1999:
+
+* Here is the suggested string structure:
+
+struct TIdentString
+{
+  TListEntry    link;       // link in the hash bucket chain
+  const char    * szString; // the string itself
+  unsigned      nHash;      // hash value
+  int           nRefCount;  // ref. counter (is it necessary?)
+};
+
+I am not sure whether all char strings themselfs will be allocated
+using xmalloc() or in a common arena. If xmalloc() is used, the refCounter
+can be supported and space can be reclaimed when nRefCount gets to 0.
+Otherwise the strings will be in an arena which will be deallocated when
+destroying the entire string table. All in all there are two combinations:
+  - TIdentString in PagedHeap, *szString in xmalloc(). In that case individual
+strings can be freed when they are no longer needed. nRefCount is used. Note
+that although *szString is in the normal C heap, the space is accounted for
+and will be freed when destroying the table.
+  - TIdentString and *szString in an arena. In that case all strings remain
+in the table till the end of the program when they are all freed. nRefCount
+is not used. Even better: the character string can be appended to the end
+of the structure saving an allocation call.
+
+
+* I implemented the strings table and applied to the current structure.
+It simplified a lot of things. However I am thinking of changing the
+overall structure to make full use of the strings table.
+
+The string will contain for each cathegory a doubly linked list of
+items that have this string as a name. 
+The cathegories will be Symbols and Structs. For example when we want
+to insert an ident in the active idents hash-table we will add it to
+its string's "Symbols" cathegory linked list.
+
+* Ok, the new implementation is ready. It was surprisingly easy. I
+even removed the HASHTAB module from the project.
+
+* Now I must decide how and when to use arenas for the rest of the
+allocations. The arenas aren't slower than fixed heap and in some
+cases can be significantly more convinient.
+First lets specify the purpose of FixedHeap and Arena's:
+
+  Arena: must be used for various objects which all exist for
+one (often relatively short) period of time. The arena is based on
+temporal locality of allocations/deallocations.
+
+  FixedHeap: must be used for a pool of objects of one type. Their
+lifetime is long and not bounded by temporal locality. They can be
+quickly deallocated one by one or all at once. In some cases it pays
+off to use the FixedHeap as an Arena for one type of objects. It makes
+sense when there is no other type of objects with same temporal
+locality because FixedHeap is slightly faster than an Arena and it
+allows freeing of separate objects anyway.
+
+2 Aug 1999:
+
+* How about keeping the symbols with same name sorted by scope? Currently
+all symbols with the same string as a name are linked in an arbitrary
+order, so FindLocalIdent() has to traverse all of them in order to find
+the most-nested definition. If we keep them sorted by scope (most-nested
+scope first in the list), there will be no search at all. Insertion will
+take a little more time, but inserting happens only whan a symbol is being
+declared which is much more rare than a symbol being used.
+
+* After some thinking I realized that we can never add a symbol with
+smaller scope than the other ones currently active. The list must function
+more like stack! So, inserting will be even faster. Here are two assumptions
+that DO NOT always hold, but in 99% of the cases they will bring a speedup
+to AddIdentToHash() and FindScopeIdent():
+  - (1) In the chain of a single string name, the ident being added is always
+  with the most nested scope.
+  - (2) When searching for an ident in a scope, the ident will always be with
+  the most nested scope in the name chain.
+Here is a case when these assumptions are violated:
+  struct X // scope 0
+  {
+    int i; // scope 1
+    enum {
+      i,   // scope 0 !!!! It has smaller scope than X::i !
+      j
+    } e;
+  };
+
+* I don't like using TLocalIdent anymore. These type games are boring. I
+will embed the structure explicitly in TSymbol and TStructDef.
+
+17 Aug 1999:
+
+* What are the different allocation pools that we have ? What are the lifetimes 
+of the objects in them ? How do we deallocate them - arenas? fixed-heaps?? 
+
+Ok, here goes:
+  
+1. Generate symbol tables and AST-s from the source file. The AST-s for *all*
+functions are generated. Must be able to print, save and load the AST-s and
+symbol tables.
+AST-s must be decorated with source file information for debug builds.
+All compilation errors must are reported here.
+
+2. Code generation. This has two alternatives:
+  - generate simple (extremely stupid) IA32 or C-CODE code to test the correctness
+of the AST-s. Straight forward generation into a text file. This doesn't deserve
+any special atention. The AST should have been decorated enough, to make this
+phase very easy.
+Note: No optimizations whatsoever are performed here. The purpose is not to
+produce sabe code, but to prove the correctness of the previous phases.
+  - Generate a p-code flowchart and proceed on with the stuff...
+
+
+We must provide a very clear separation of the modules. There MUST BE NO
+hidden interdepencies. ANY interdependcies must be brought down to a minimum.
+
+18 Aug 1999:
+* Unfinished things at current stage (declarations parsing and support):
+  1. Error recovery. It works, but I have doubts. I have managed to remove
+  almost all data dependancies from the error recovery except
+  closing active scopes in some cases (for example when parsing a function
+  declaration).
+
+  2. Check for conflicts when combining declspecs: in DECL.C and PARSETYP.C
+  3. Initialization of enum members (and checking for overflow?)
+  4. Support sized arrays
+  5. Unnamed function parameters
+  6. Convert arrays to pointers in function parameters
+  7. Full implementation of type_cast
+
+2 is not important. 3 and 4 depend on parsing of expressions which is to
+be done shortly. 5 and 6 are important and must be implemented now.
+
+    
+* Ok, I implemented 5 and 7. It was easy - all was connected with type_cast-style
+declarations. I had also to add some code, so that functions searching by strName
+returned NULL immediately when strName == NULL.
+
+* It is not clear a what stage should arrays funtion parameters be converted to 
+pointers. At the declaration itself? Later? never?
+It seems that BCC and VC both keep the function declaration converted.
+Which is he best place to convert arrays to pointers? There is also an additional 
+problem:if the array itself is a typedef, we can't alter it to a pointer. We have 
+to construct a new type entry. Anyway, this is natural.
+
+Ok, did that. It turned out that a convinient spot is in Decl(). Everything passes
+through there...
+I had a minor trouble: Am I allowed to modify the type that is passed to Decl().
+The TypeNodes of course no, because they may belong to a typedef. I think that
+I am allowed to modify the qnode however, because it is fresh allocated and belongs
+only to its direct owner. Anyway, I decided not to risk... :-(
+
+* I have to implement expression parsing. It is not possible (or good) to implement
+a subset, so here are some more interesting thing that are required:
+  - Dealing with target-machine constants. This includes integer as well as real
+  ones. Performing operations with them too (required for constant folding).
+  - designing the final set of AST-codes. I have already decided to use the e_fetch
+  technique, so I must go over all the details (assignments, pointers, structures, etc.)
+  - For sizeof() to operate, we must have calculated the lo-level size and layout
+  of the types. So we must support lo-level types (When?). Having this and the target
+  arithmetic, sizeof() nodes will not be generated at all.
+  - We need to support a special _Error_ AST node. Is it going to be a single
+  static-allocated error node, or are we just going to have an operation constant "e_error"
+  and allocate error nodes as needed ?
+
+* Support for target types. Although currently we don't need to make our lives
+too complicated, we must leave space to implement anything in the future. So,
+*ANY* operation with target types will be implemented with a macro.
+In many cases the native support will do, but later for floating point and 64,128-bit
+arithmetic we will use routines (COCOM?).
+
+24 Aug 1998:
+* Ok, functions must also be converted to pointers if they are declared
+at FUNC_PARAM_SCOPE. This is similar to arrays.
+
+
+
+
+

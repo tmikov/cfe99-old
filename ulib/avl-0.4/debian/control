@@ -1,0 +1,41 @@
+Source: avl
+Section: devel
+Priority: optional
+Maintainer: Daniel Nagy <nagydani@fazekas.hu>
+Standards-Version: 3.2.1
+
+Package: avl1-dev
+Architecture: any
+Depends: avl1, libc6-dev
+Provides: avl-dev
+Conflicts: avl-dev
+Description: Balanced AVL Tree library (development files)
+ This data structure features fast (O(log N)) insertion, deletion and
+ retrival of records, provided that there is a sorting relation over their
+ keys and there are NO ENTRIES WITH EQUAL KEYS.
+ .
+ The AVL tree is an explicite binary searching tree, where left children
+ of each vertex are less or equal, while right children are greater or
+ equal than the vertex itself. In addition, the tree is balanced so that the
+ difference between the depths of the two subtrees of each vertex is at most
+ one. This property - as shown by Adelson-Velskij and Landis - guarantees a
+ logarithmic upper bound for the depth of the tree.
+
+Package: avl1
+Architecture: any
+Depends: ${shlibs:Depends}
+Description: Balanced AVL Tree library
+ This data structure features fast (O(log N)) insertion, deletion and
+ retrival of records, provided that there is a sorting relation over their
+ keys and there are NO ENTRIES WITH EQUAL KEYS.
+ .
+ The AVL tree is an explicite binary searching tree, where left children
+ of each vertex are less or equal, while right children are greater or
+ equal than the vertex itself. In addition, the tree is balanced so that the
+ difference between the depths of the two subtrees of each vertex is at most
+ one. This property - as shown by Adelson-Velskij and Landis - guarantees a
+ logarithmic upper bound for the depth of the tree.
+ .
+ This library follows an object-oriented design, despite its ANSI C
+ implementation. The reason for choosing plain old C is that it is aimed for
+ system programming.

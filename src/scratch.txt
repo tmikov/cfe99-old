@@ -1,0 +1,8 @@
+- all kinds of variable initialization
+
+- dumping
+
+- this causes strange errors
+typedef enym MyEnum MyEnum; 
+  A simpler way to get the same error"
+typedef m n;

@@ -1,0 +1,8 @@
+Please edit the Makefile to suit your requirements, then simply type
+
+make install
+
+If you want to use the library in a Linux C++ environment, replace the
+compiler by g++.
+
+Enjoy!

@@ -1,0 +1,46 @@
+%import {
+typedef int integer_t;
+typedef char * string_t;
+}
+
+%type integer_t string_t
+
+%%
+
+%abstract
+node :: %root
+;
+
+%abstract
+binary :: node
+%skeleton left, right : node
+;
+
+%abstract
+unary :: node
+%skeleton op : node
+;
+
+e_minus, e_shl, e_shr :: binary
+;
+
+e_sym :: node
+%skeleton name : string_t
+;
+
+e_icon :: node
+%skeleton value : integer_t
+
+%%
+
+int main ( void )
+{ 
+  IR_node_t x;
+
+  IR_start();
+  
+  x = 
+
+  IR_stop();
+};
+

@@ -1,0 +1,263 @@
+%import{
+#include "expr.h"
+
+#define CS_NODE IR_node_t
+
+#ifndef CS_OPERAND_1_OF_2
+#define CS_OPERAND_1_OF_2(node)  IR_left (node)
+#endif
+
+#ifndef CS_OPERAND_2_OF_2
+#define CS_OPERAND_2_OF_2(node)  IR_right (node)
+#endif
+
+#ifndef CS_OPERAND_1_OF_1
+#define CS_OPERAND_1_OF_1(node)  IR_op (node)
+#endif
+}
+
+%term IR_NM_e_plus IR_NM_e_minus IR_NM_e_shl IR_NM_e_shr IR_NM_e_assign
+%term IR_NM_e_fetch
+%term IR_NM_e_sym IR_NM_e_icon
+
+%local{
+int eax_used = 0;
+
+void NeedEax ( void )
+{
+  if (eax_used != 0)
+    printf( "push eax\n" );
+  ++eax_used;
+};
+
+char OperBuf[80];
+
+void GetDirect ( IR_node_t node )
+{
+  if (IR_NODE_MODE( node ) == IR_NM_e_icon)
+    sprintf( OperBuf, "%d", IR_value( node ) );
+  else
+  if (IR_NODE_MODE( node ) == IR_NM_e_sym)
+    sprintf( OperBuf, "%s", IR_name( node ) );
+  else
+    abort();
+};
+
+}
+
+%%
+
+symbol : IR_NM_e_sym [1]
+         %if [IR_isReg($1) == 0]
+  {
+    NeedEax();
+    printf( "lea eax, %s\n", IR_name( $1 ) );
+  }
+;
+
+lvalue : symbol ;
+
+reg : IR_NM_e_sym             
+      %if [IR_isReg($1) != 0]
+  {
+    $$ = $1;
+  }
+;
+
+fetch_reg : IR_NM_e_fetch( reg ) 
+  {
+    $$ = $2;
+  }
+;
+
+fetch : fetch_reg  [1]
+  {
+    NeedEax();
+    printf( "mov eax, %s\n", IR_name($1) );
+  }
+;
+
+fetch : IR_NM_e_fetch( lvalue ) [1]
+  {
+    printf( "mov eax, dword ptr [eax]\n" );
+  }
+;
+
+fetch : IR_NM_e_fetch( IR_NM_e_sym ) [1]
+  {
+    NeedEax();
+    printf( "mov eax, %s\n", IR_name( $2 ) );
+  }
+;
+
+direct : IR_NM_e_icon
+  {
+    $$ = $1;
+  }
+;
+
+direct : IR_NM_e_fetch( IR_NM_e_sym )
+  {
+    $$ = $2;
+  }
+;
+
+direct : fetch_reg
+  {
+    $$ = $1;
+  }
+;
+
+reg_const : fetch_reg { $$ = $1; };
+reg_const : IR_NM_e_icon { $$ = $1; };
+
+add : IR_NM_e_plus ( expr, direct ) [1]
+  {
+    GetDirect( $3 );
+    printf( "add eax, %s\n", OperBuf );
+  }
+;
+
+add : IR_NM_e_plus ( expr, expr ) [2]
+  {
+    printf( "pop ebx\n" );
+    --eax_used;
+    printf( "add eax, ebx\n" );
+  }
+;
+
+add : IR_NM_e_plus ( fetch_reg, reg_const ) [1]
+  {
+    NeedEax();
+    GetDirect( $3 );
+    printf( "lea eax, [%s + %s]\n", IR_name($2), OperBuf );
+  }
+;
+
+shl : IR_NM_e_shl ( expr, IR_NM_e_icon ) [1]
+  {
+    GetDirect( $3 );
+    printf( "shl eax, %s\n", OperBuf );
+  }
+;
+
+shl : IR_NM_e_shl ( expr, expr ) [2]
+  {
+    printf( "mov cl, al\n" );
+    printf( "pop eax\n" );
+    --eax_used;
+    printf( "shl eax, cl\n" );
+  }
+;
+
+/*
+  (eax + 2)<<1 = eax * 2 + 4 = lea eax, [eax *2 + 4]
+*/
+shl : IR_NM_e_shl( IR_NM_e_plus( expr, IR_NM_e_icon ), IR_NM_e_icon ) [1]
+      %if [IR_value($5) > 0 && IR_value($5) <= 3]
+  {
+    printf( "lea eax, [eax * %d + %d]\n",
+        1 << IR_value($5), IR_value($4) << IR_value($5) );
+  }
+;
+
+shl : IR_NM_e_shl( IR_NM_e_plus( fetch_reg, IR_NM_e_icon ), IR_NM_e_icon ) [1]
+      %if [IR_value($5) > 0 && IR_value($5) <= 3]
+  {
+    printf( "lea eax, [%s * %d + %d]\n",
+        IR_name($3),
+        1 << IR_value($5), IR_value($4) << IR_value($5) );
+  }
+;
+
+const : IR_NM_e_icon [1]
+  {
+    NeedEax();
+    printf( "mov eax, %d\n", IR_value( $1 ) );  
+  }
+;
+
+expr : fetch ;
+expr : add ;
+expr : shl ;
+expr : const ;
+
+assign : IR_NM_e_assign( lvalue, expr ) [2]
+  {
+    printf( "pop ebx\n" );
+    --eax_used;
+    printf( "mov [ebx], eax\n" );
+  }
+;
+
+assign : IR_NM_e_assign( IR_NM_e_sym, expr ) [1]
+  {
+    printf( "mov %s, eax\n", IR_name($2) );
+  }
+;
+
+assign : IR_NM_e_assign( IR_NM_e_sym, IR_NM_e_icon ) [1]
+  {
+    GetDirect( $3 );
+    printf( "mov %s, %s\n", IR_name($2), OperBuf );
+  }
+;
+
+
+%%
+
+void do_print ( IR_node_t node )
+{
+  IR_print_node( node, 0 );
+};
+
+void test ( void )
+{ 
+  IR_node_t x;
+  CS_cover cover;
+
+  // a = b + 2 >> 1;
+
+  x =
+    IR_new_e_assign(
+      IR_new_e_sym( "edi", 1 ),
+      IR_new_e_shl(
+        IR_new_e_plus(
+          IR_new_e_fetch( IR_new_e_sym("esi", 1) ),
+          IR_new_e_icon( 10 )
+        ),
+        IR_new_e_icon( 3 )
+      )
+    );
+
+/*
+  x =
+    IR_new_e_assign(
+      IR_new_e_sym( "a", 0 ),
+      IR_new_e_plus(
+        IR_new_e_fetch( IR_new_e_sym("esi",1) ),
+        IR_new_e_icon( 10 )
+      )
+    );
+*/
+//  IR_traverse_depth_first( x, 1, do_print );
+
+  cover = CS_find_cover( x );
+  CS_traverse_cover( cover, CSNT_assign );
+  CS_delete_cover( cover );
+
+  IR_stop();
+}
+
+int main ( void )
+{
+  IR_start();
+  CS_start();
+
+  test();
+
+  CS_finish();
+  IR_stop();
+  return 0;
+};
+

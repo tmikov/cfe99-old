@@ -1,0 +1,1565 @@
+%{
+#include "precomp.h"
+#include "cfe_priv.h"
+
+#include "c.tab.inc" // automatically generated definitions
+
+#define YYINITDEPTH 50
+
+#define YYDEBUG 1
+
+#if YYDEBUG
+#  define YYERROR_VERBOSE 1
+#endif
+
+// In order to prevent usage of last_line & last_column, we declare this to be
+// empty
+#define YYLLOC_DEFAULT(Current, Rhs, N) 
+
+void yyerror ( char * err );
+int yylex ( void );
+
+static void yy_mark ( unsigned typ, const YYSTYPE * pval );
+
+// Use this to fix bison type errors when we *really* don't have a result
+// from a production.
+#define NO_RESULT  ((void)0)
+
+static TDeclSpecs * DSpecs_Combine_Prim ( TDeclSpecs ** a, TDeclSpecs ** pb );
+static TQualNode  * DSpecs_GenQual_Prim ( TDeclSpecs ** pds );
+
+#define DSPECS_COMBINE( a, b ) DSpecs_Combine_Prim( &(a), &(b) )
+#define DSPECS_GENQUAL( a )    DSpecs_GenQual_Prim( &(a) )
+
+%}
+
+%union 
+{
+  int               token;
+  STRING            str;
+  TSymbol           * sym;
+  TQualNode         * m_typ; // modifiable TQualNode
+  const TQualNode   * typ;
+  const TTypeNode   * tnode;
+  TEnumDesc         * edesc;
+  TAst              * ast;
+  TDeclSpecs        * dspecs;
+  TScope            * scope;
+}
+
+// type specifiers
+//
+%token<token> 
+    C_VOID        / "void"
+    C_CHAR        / "char"
+    C_SHORT       / "short"
+    C_INT         / "int"
+    C_LONG        / "long"
+    C_SIGNED      / "signed"
+    C_UNSIGNED    / "unsigned"
+    C_FLOAT       / "float"
+    C_DOUBLE      / "double"
+    C__BOOL       / "_Bool"
+    C__COMPLEX    / "_Complex"
+    C__IMAGINARY  / "_Imaginary"
+
+// EXT: a general way to describe an extended types
+%token C_EXT_INT
+%token C_EXT_FLOAT
+
+// type qualifiers
+//
+%token<token> 
+    C_CONST      / "const"
+    C_VOLATILE   / "volatile"
+    C_RESTRICT   / "restrict"
+
+// Storage classes
+//
+%token<token> 
+    C_EXTERN   / "extern"
+    C_AUTO     / "auto"
+    C_STATIC   / "static"
+    C_REGISTER / "register"
+    C_TYPEDEF  / "typedef"
+    C_INLINE   / "inline"
+
+// C reserved words
+//
+%token<token>
+    STRUCT     / "struct"
+    UNION      / "union"
+    ENUM       / "enum"
+
+%token 
+    SWITCH     / "switch"
+    CONTINUE   / "continue"
+    CASE       / "case"
+    SIZEOF     / "sizeof"
+    DEFAULT    / "default"
+    ELSE       / "else"
+    WHILE      / "while"
+    DO         / "do"
+    GOTO       / "goto"
+    BREAK      / "break"
+    IF         / "if"
+    FOR        / "for"
+    RETURN     / "return"
+
+%token<str>  IDENT     / "identifier" 
+%token<sym>  TYPENAME  / "type name"
+
+%token<ast>  
+    NUMBER    / "integer number"     
+    F_NUMBER  / "real number"
+    STRING_CONST   / "string constant"      
+    LSTRING_CONST  / "wide string constant"  
+
+// Punctuators longer than a character
+
+%token 
+    LOG_OR    / "||"
+    LOG_AND   / "&&"
+    INC       / "++"
+    DEC       / "--"
+    PTR       / "->"
+    ELLIPSIS  / "..."
+
+// Identifiers that group similar tokens to simplify the grammar
+
+%token  
+    ASSIGN        / "'*=', '/=', '%=', '+=', '-=', '&=', '|=', '^=', '<<=' or '>>='"
+    EQCOMPARE     / "'==' or '!='"
+    ARITHCOMPARE  / "'<=', '>=', '<' or '>'"
+    SHIFT         / "'<<' or '>>'" 
+
+// __declspec
+%token  DECLSPEC / "__declspec"
+
+// a non-ansi attribute like __cdecl, __pascal, __far, __near
+%token  ATTR     / "__attr"
+
+// EXT: GNU C extensions
+//
+%token 
+    TYPEOF        / "__typeof__"
+    LABEL         / "__label__"
+    ALIGNOF       / "__alignof__"
+    GCC_ATTRIBUTE / "__attribute__"
+
+// Set precedences to avoid IF-ELSE `shift'/reduce conflict
+%left   IF
+%left   ELSE
+
+/*
+  3 shift/reduce conflicts on TYPENAME in declaration_specifiers. 
+  They are explained in the source.
+*/
+%expect 3
+
+%%
+
+start:
+    translation_unit { Dump_Init(); Dump_TScope( CfeRoots.GlobalScope ); }
+  | /*empty*/
+  ;
+
+
+//--------------------------------------------------------------------------
+// Name         garbage_collect
+//
+// Perform an incremental garbale collection while parsing.
+//--------------------------------------------------------------------------
+garbage_collect:
+    {
+      // Is it time to collect ?
+      // In debug builds we always perform a full collection to make sure
+      // there isn't a marking bug.
+      //
+#ifdef _DEBUG
+      if (GcCollectStart( true )) 
+#else
+      if (GcCollectStart( false )) 
+#endif
+      {
+        YY_MARK_STACK();   // mark the contents of the parser stack
+        Cfe_GcMarkRoots(); // mark all C front-end data
+
+        GcCollectEnd();
+      }
+    }
+  ;
+
+//--------------------------------------------------------------------------
+// Name         ensure_file_scope
+//
+// Makes sure we are at file scope by popping. 
+// Although it shouldn't happen, if there is a bug in the grammar, it is
+// conceivable that on syntx errors a scope won't get closed on time.
+// We use ensure_file_scope at top level to clean up such cases.
+//--------------------------------------------------------------------------
+ensure_file_scope:
+    {
+      ASSERT( CfeRoots.CurScope != NULL );
+      while ( CfeRoots.CurScope->disposition != SCOPE_FILE)
+      {
+        TRACE0( "***Warning: popping extra scopes at file level!!\n" );
+        SymTab_PopScope();
+      }
+    }
+  ;
+
+
+/////////////////////////////////////////////////////////////////
+//
+// Little helpers added by me
+//
+
+
+//  An optional ',' at the end of initializer_list/enumerator_list
+comma_opt:
+    /*empty*/
+  | ','
+  ;
+
+
+/////////////////////////////////////////////////////////////////
+//
+//  A.1 Lexical elements
+//
+
+
+%type<ast> constant:
+    NUMBER
+  | F_NUMBER
+/*
+  | enumeration_constant
+*/
+  ;
+
+%type<ast> string_literal:
+    STRING_CONST
+  | LSTRING_CONST
+  | string_literal STRING_CONST
+      { TODO_BAD("combine the strings") }
+  | string_literal LSTRING_CONST
+      { TODO_BAD("combine the strings") }
+  ;
+
+/*
+  6.2.3  Name spaces of identifiers
+
+  [#1] If more than one declaration of a particular identifier
+  is visible at any point in a translation unit, the syntactic
+  context disambiguates uses that refer to different entities.
+  Thus,  there are separate name spaces for various categories
+  of identifiers, as follows:
+
+    -- label names (disambiguated by the syntax of  the  label
+       declaration and use);
+
+    -- the   tags  of  structures,  unions,  and  enumerations
+       (disambiguated  by  following  any22)  of  the keywords
+       struct, union, or enum);
+
+    -- the members of structures or unions; each structure  or
+       union  has  a  separate  name  space  for  its  members
+       (disambiguated by the type of the  expression  used  to
+       access the member via the . or -> operator);
+
+    -- all  other  identifiers,  called  ordinary  identifiers
+       (declared in ordinary  declarators  or  as  enumeration
+       constants).
+*/
+
+// regular identifiers 
+%type<str> identifier:
+    IDENT
+  ;
+
+%type<str> any_identifier:
+    TYPENAME   { $$ = $TYPENAME->id.strName }
+  | IDENT
+  ;
+
+/////////////////////////////////////////////////////////////////
+//
+//  A.2.1 Expressions
+//
+
+// 6.5.1
+%type<ast> primary_expression:
+    identifier         {$$ = Expr_ident( &@identifier, $identifier )}
+  | constant           
+  | string_literal     {TODO_BAD("");}
+  | '(' expression ')' { $$ = $expression; }
+// EXT: GNU C extension
+  | '(' compound_statement ')'  {TODO_BAD("");}
+  ;
+
+// 6.5.2
+%type<ast> postfix_expression:
+    primary_expression                                          
+  | postfix_expression '[' expression ']'                       {TODO_BAD("");}
+  | postfix_expression '(' argument_expression_list_opt ')'     {TODO_BAD("");}
+  | postfix_expression '.' any_identifier                       {TODO_BAD("");}
+  | postfix_expression PTR any_identifier                       {TODO_BAD("");}
+  | postfix_expression INC                                      {TODO_BAD("");}
+  | postfix_expression DEC                                      {TODO_BAD("");}
+  | '(' type_name ')' '{' initializer_list comma_opt '}'        {TODO_BAD("");}
+  ;
+
+argument_expression_list:
+    assignment_expression                                       {TODO_BAD("");}
+  | argument_expression_list ',' assignment_expression          {TODO_BAD("");}
+  ;
+
+argument_expression_list_opt:
+    /*empty*/
+  | argument_expression_list
+  ;
+
+// 6.5.3
+%type<ast> unary_expression:
+    postfix_expression
+  | INC unary_expression              {TODO_BAD("");}
+  | DEC unary_expression              {TODO_BAD("");}
+  | '*'            cast_expression    {$$ = Expr_deref( &@1, $cast_expression )}
+  | '&'            cast_expression    {$$ = Expr_addr( &@1, $cast_expression )}
+  | unary_operator cast_expression    {TODO_BAD("");}
+  | SIZEOF unary_expression           {TODO_BAD("");}
+  | SIZEOF '(' type_name ')'          {TODO_BAD("");}
+
+// EXT: GNU C extensions
+  | ALIGNOF unary_expression          {TODO_BAD("");}
+  | ALIGNOF '(' type_name ')'         {TODO_BAD("");}
+  | LOG_AND any_identifier            {TODO_BAD("");}
+  ;
+
+unary_operator:
+    '+' | '-' | '~' | '!'
+  ;
+
+
+// 6.5.4
+%type<ast> cast_expression:
+    unary_expression
+  | '(' type_name ')' cast_expression  {TODO_BAD("");}
+  ;
+
+// 6.5.5
+%type<ast> multiplicative_expression:
+    cast_expression
+  | multiplicative_expression '*' cast_expression    {$$ = Expr_mul( &@2, $multiplicative_expression, $cast_expression )}
+  | multiplicative_expression '/' cast_expression    {TODO_BAD("");}
+  | multiplicative_expression '%' cast_expression    {TODO_BAD("");}
+  ;
+
+// 6.5.6
+%type<ast> additive_expression:
+    multiplicative_expression
+  | additive_expression '+' multiplicative_expression    {TODO_BAD("");}
+  | additive_expression '-' multiplicative_expression    {TODO_BAD("");}
+  ;
+
+// 6.5.7
+%type<ast> shift_expression:
+    additive_expression
+  | shift_expression SHIFT additive_expression           {TODO_BAD("");}
+  ;
+
+// 6.5.8
+%type<ast> relational_expression:
+    shift_expression 
+  | relational_expression ARITHCOMPARE shift_expression  {TODO_BAD("");}
+  ;
+
+// 6.5.9
+%type<ast> equality_expression:
+    relational_expression
+  | equality_expression EQCOMPARE relational_expression  {TODO_BAD("");}
+  ;
+
+// 6.5.10
+%type<ast> and_expression:
+    equality_expression
+  | and_expression '&' equality_expression   {$$ = Expr_binAnd( &@2, $and_expression, $equality_expression )}
+  ;
+
+// 6.5.11
+%type<ast> exclusive_or_expression:
+    and_expression 
+  | exclusive_or_expression '^' and_expression  {$$ = Expr_binXor( &@2, $exclusive_or_expression, $and_expression )}
+  ;
+
+// 6.5.12
+%type<ast> inclusive_or_expression:
+    exclusive_or_expression
+  | inclusive_or_expression '|' exclusive_or_expression {$$ = Expr_binOr( &@2, $inclusive_or_expression, $exclusive_or_expression )}
+  ;
+
+// 6.5.13
+%type<ast> logical_and_expression:
+    inclusive_or_expression
+  | logical_and_expression LOG_AND inclusive_or_expression  {TODO_BAD("");}
+  ;
+
+// 6.5.14
+%type<ast> logical_or_expression:
+    logical_and_expression 
+  | logical_or_expression LOG_OR logical_and_expression     {TODO_BAD("");}
+  ;
+
+// 6.5.15
+%type<ast> conditional_expression:
+    logical_or_expression
+// EXT: Omitting the expression is GNU C extension
+  | logical_or_expression '?' expression_opt ':' conditional_expression {TODO_BAD("");}
+  ;
+
+// 6.5.16
+%type<ast> assignment_expression:
+    conditional_expression
+  | unary_expression assignment_operator assignment_expression  
+      {$$ = Expr_assign( &@assignment_operator, $unary_expression, $assignment_expression )}
+  ;
+
+%type<ast> assignment_expression_opt:
+    /*empty*/                { $$ = NULL }
+  | assignment_expression
+  ;
+
+assignment_operator:
+    ASSIGN | '='
+  ;
+
+// 6.5.17
+%type<ast> expression1:
+    assignment_expression
+  | expression1 ',' assignment_expression     {TODO_BAD("");}
+  ;
+
+%type<ast> expression:
+    expression1 
+  ;
+
+%type<ast> expression_opt:
+    /*empty*/      {$$ = NULL}
+  | expression                               
+  ;
+
+// 6.6
+%type<ast> constant_expression:
+    conditional_expression
+      {
+        TODO1( "fold" );
+      }
+  ;
+
+
+
+/////////////////////////////////////////////////////////////////
+//
+//  A.2.2 Declarations
+//
+
+/*
+// EXT: GNU C Extension
+//
+// Note: may be this will be better done with a lexical hack.
+// Perhaps that's the purpose of the double brackets anyway.
+// 
+gcc_attribute:
+    GCC_ATTRIBUTE '(' '(' gcc_attribute_value_list ')' ')'
+  ;
+
+gcc_attribute_value_list:
+    gcc_attribute_value
+  | gcc_attribute_value_list ',' gcc_attribute_value
+  ;
+
+gcc_attribute_value:
+    any_identifier
+  ;
+
+gcc_attribute_list_opt:
+    //empty
+  | gcc_attribute_list_opt gcc_attribute
+  ;
+*/
+
+// 6.7
+declaration:
+    GenType_declaration_specifiers 
+    init_declarator_list_opt( $GenType_declaration_specifiers ) ';'  
+      {NO_RESULT} 
+  ;
+
+%type<dspecs> GenType_declaration_specifiers:
+    declaration_specifiers { $$ = DSpecs_GenType( $declaration_specifiers ) }
+  ;
+
+/*
+  This part must declare at least one specifier according
+  to the C99 standard. For compatibilty with the older standard
+  we allow declaration_specifiers without a signe specifier 
+  (leading to declarations like "static i;"). We can enforce 
+  the standard behaviour later semantically if we want.
+
+  Note: this decision causes 3 `shift'/reduce conflicts on TYPENAME. 
+  Is TYPENAME part of the specifiers or part of the declarator?
+  The default behaviour (`shift') suits us since the TYPENAME must be
+  part of the specifiers. 
+*/
+
+%type<dspecs> declaration_specifiers:
+    storage_class_specifier declaration_specifiers_opt   { $$ = DSPECS_COMBINE( $storage_class_specifier, $declaration_specifiers_opt ) }
+  | function_specifier      declaration_specifiers_opt   { $$ = DSPECS_COMBINE( $function_specifier,      $declaration_specifiers_opt ) }
+  | type_qualifier          declaration_specifiers_opt   { $$ = DSPECS_COMBINE( $type_qualifier,          $declaration_specifiers_opt ) }
+
+  | type_specifier          declaration_specifiers1      { $$ = DSPECS_COMBINE( $type_specifier,          $declaration_specifiers1 ) }
+  | typedef_name            declaration_specifiers2      { $$ = DSPECS_COMBINE( $typedef_name,            $declaration_specifiers2 ) }
+  ;
+
+%type<dspecs> declaration_specifiers_opt:
+    /*empty*/                   { $$ = NULL }
+  | declaration_specifiers
+  ;
+
+%type<dspecs> declaration_specifiers1:
+    /*empty*/                                            { $$ = NULL }
+  | storage_class_specifier declaration_specifiers1      { $$ = DSPECS_COMBINE( $storage_class_specifier, $declaration_specifiers1 ) }
+  | function_specifier      declaration_specifiers1      { $$ = DSPECS_COMBINE( $function_specifier,      $declaration_specifiers1 ) }
+  | type_qualifier          declaration_specifiers1      { $$ = DSPECS_COMBINE( $type_qualifier,          $declaration_specifiers1 ) }
+  | type_specifier          declaration_specifiers1      { $$ = DSPECS_COMBINE( $type_specifier,          $declaration_specifiers1 ) }
+  ;
+
+%type<dspecs> declaration_specifiers2:
+    /*empty*/                                            { $$ = NULL }
+  | storage_class_specifier declaration_specifiers2      { $$ = DSPECS_COMBINE( $storage_class_specifier, $declaration_specifiers2 ) }
+  | function_specifier      declaration_specifiers2      { $$ = DSPECS_COMBINE( $function_specifier,      $declaration_specifiers2 ) }
+  | type_qualifier          declaration_specifiers2      { $$ = DSPECS_COMBINE( $type_qualifier,          $declaration_specifiers2 ) }
+  ;
+
+init_declarator_list( $<dspecs>dspecs ): 
+    init_declarator( $dspecs )
+  | init_declarator_list( $dspecs ) ',' init_declarator( $dspecs )
+  ;
+
+init_declarator_list_opt( $<dspecs>dspecs ): 
+    GetDSpecsTyp( $dspecs ) 
+      {
+        Declare( $dspecs, New_TSymbol( NULL, $GetDSpecsTyp ), NULL, false );
+      }
+  | init_declarator_list( $dspecs )
+  ;
+
+%type<typ> GetDSpecsTyp( $<dspecs>dspecs ):
+      {
+        $$ = $dspecs->type;
+      }
+  ;
+
+init_declarator( $<dspecs>dspecs ):  
+    GetDSpecsTyp( $dspecs ) declarator( $GetDSpecsTyp )
+      {
+        Declare( $dspecs, $declarator, NULL, false );
+      }
+  | GetDSpecsTyp( $dspecs ) declarator( $GetDSpecsTyp ) '=' initializer
+      { 
+        TODO1( "handle the initializer" );
+        Declare( $dspecs, $declarator, NULL, true );
+      }
+  ;
+
+// 6.7.1
+%type<dspecs> storage_class_specifier:
+    sclass                  { $$ = New_DSpecs( $sclass ) }
+//EXT: our extension
+  | declspec
+  ;
+
+%type<token> sclass:
+    // EXT: Note: initialized typedef is a GNU C extension  
+    C_TYPEDEF    
+  | C_EXTERN
+  | C_STATIC
+  | C_AUTO
+  | C_REGISTER
+  ;
+
+
+// EXT: Our extension
+//
+// attributes like DllImport,DllExport, or whatever the
+// compiler/platform supports, are specified this way.
+//
+%type<dspecs> declspec:
+    DECLSPEC '(' any_identifier ')'   
+      {
+        $$ = New_DSpecs_ExtDeclSpec( ExtDeclSpec_Make( $any_identifier ) );
+      }
+  ;
+
+// 6.7.2
+
+/*
+  This is declaration is too loose.
+  Each alternative can't be combined with any other alternative in 
+  the same specifier list. Actually only typespec can be combined
+  with itself
+
+  So, we can put a few additional rules to prevent those things.
+
+  To remove the conflicts we need to take care of the typedef_name only
+  because it causes conflicts.
+*/
+%type<dspecs> type_specifier:
+    typespec                   { $$ = New_DSpecs( $typespec ) }
+  | extended_int_specifier
+  | extended_float_specifier
+  | struct_or_union_specifier
+  | enum_specifier
+
+// EXT: GNU C extension
+  | TYPEOF '(' expression ')'  {TODO}
+  | TYPEOF '(' type_name ')'   {TODO}
+  ; 
+
+%type<token> typespec:
+    C_VOID        
+  | C_CHAR        
+  | C_SHORT       
+  | C_INT      
+  | C_LONG     
+  | C_SIGNED   
+  | C_UNSIGNED  
+  | C_FLOAT     
+  | C_DOUBLE    
+  | C__BOOL     
+  | C__COMPLEX  
+  | C__IMAGINARY
+  ;
+
+// EXT: a general way to specify extended integer types
+%type<dspecs> extended_int_specifier:
+    C_EXT_INT '(' NUMBER ')'    
+      {
+        $$ = New_DSpecs_ExtInt( $NUMBER );
+      }
+  ;
+
+// EXT: a general way to specify extended floating point types
+%type<dspecs> extended_float_specifier:
+    C_EXT_FLOAT '(' NUMBER ')'    
+      {
+        $$ = New_DSpecs_ExtFloat( $NUMBER );
+      }
+  ;
+
+// 6.7.2.1
+// EXT: declspec is our extension
+%type<dspecs> struct_or_union_specifier:
+    struct_or_union any_identifier declare_tag( $struct_or_union, $any_identifier )
+      struct_scope  
+      {
+        const TTypeNode * tag = $declare_tag;
+        if (tag->u.memberScope == NULL)
+          MODIFY_TNODE(tag)->u.memberScope = $struct_scope;
+        $$ = New_DSpecs_Tag( tag );
+      }
+  | struct_or_union null_str declare_tag( $struct_or_union, $null_str )
+      struct_scope  
+      {
+        const TTypeNode * tag = $declare_tag;
+        if (tag->u.memberScope == NULL)
+          MODIFY_TNODE(tag)->u.memberScope = $struct_scope;
+        $$ = New_DSpecs_Tag( tag );
+      }
+  | struct_or_union any_identifier
+      {
+        $$ = New_DSpecs_Tag( DeclareTag( $struct_or_union, $any_identifier, false ) );
+      }
+  ;
+
+%type<str> null_str: { $$ = NULL } ;
+
+%type<tnode> declare_tag( $<token>tok, $<str>str ):
+      {
+        $$ = DeclareTag( $tok, $str, true )
+      }
+  ;
+
+%type<scope> struct_scope:
+    '{' 
+        { SymTab_PushNewScope( SCOPE_STRUCT ); } 
+    struct_declaration_list  // handles error recovery
+    '}' 
+        { 
+          // Error recovery is handled in struct_declaration_list
+          $$ = SymTab_PopScope(); 
+        } 
+  ;
+
+%type<token> struct_or_union:
+    STRUCT 
+  | UNION
+  ;
+
+struct_declaration_list:
+    struct_declaration
+  | struct_declaration_list struct_declaration
+  | error
+  ;
+
+struct_declaration:
+/*
+  This used to be:
+
+    GenType_specifier_qualifier_list
+
+  but it is better to allow the full declartion syntax
+  in the structure and verify it semantically, than to just disallow
+  it syntactically. Leads to much better error emssages.
+*/
+    GenType_declaration_specifiers 
+      struct_declarator_list( $GenType_declaration_specifiers ) ';' 
+      {NO_RESULT}
+  ;
+
+%type<dspecs> GenType_specifier_qualifier_list:
+    specifier_qualifier_list { $$ = DSpecs_GenType( $specifier_qualifier_list ) }
+  ;
+
+/*
+  This rule has one `shift'/reduce conflict on TYPENAME. 
+  Is TYPENAME part of the specifier_qualifer_list or part of the declarator?
+
+  It is part of specifier_qualifier_list, so `shift' is ok.
+  See explanations at declaration_specifiers
+*/
+%type<dspecs> specifier_qualifier_list :
+    type_qualifier specifier_qualifier_list    { $$ = DSPECS_COMBINE( $type_qualifier, $specifier_qualifier_list ) }
+  | type_qualifier 
+  | type_specifier specifier_qualifier_list1   { $$ = DSPECS_COMBINE( $type_specifier, $specifier_qualifier_list1 ) }
+  | typedef_name   specifier_qualifier_list2   { $$ = DSPECS_COMBINE( $typedef_name,   $specifier_qualifier_list2 ) }
+  ;
+
+%type<dspecs> specifier_qualifier_list1 :
+    /*empty*/                                    { $$ = NULL }
+  | type_qualifier specifier_qualifier_list1     { $$ = DSPECS_COMBINE( $type_qualifier, $specifier_qualifier_list1 ) }
+  | type_specifier specifier_qualifier_list1     { $$ = DSPECS_COMBINE( $type_specifier, $specifier_qualifier_list1 ) }
+  ;
+
+%type<dspecs> specifier_qualifier_list2: // = dspecs
+    /*empty*/                                    { $$ = NULL }
+  | type_qualifier specifier_qualifier_list2     { $$ = DSPECS_COMBINE( $type_qualifier, $specifier_qualifier_list2 ) }
+  ;
+
+struct_declarator_list( $<dspecs>dspecs ): 
+    struct_declarator( $dspecs )
+  | struct_declarator_list( $dspecs ) ',' struct_declarator( $dspecs )
+  ;
+
+struct_declarator( $<dspecs>dspecs ): 
+    GetDSpecsTyp( $dspecs ) declarator( $GetDSpecsTyp )
+      {
+        Declare( $dspecs, $declarator, NULL, false );
+      }
+  | GetDSpecsTyp( $dspecs ) declarator( $GetDSpecsTyp ) ':' constant_expression   
+      {
+        Declare( $dspecs, $declarator, $constant_expression, false );
+      }
+  | GetDSpecsTyp( $dspecs ) ':' constant_expression   
+      {
+        Declare( $dspecs, New_TSymbol( NULL, $GetDSpecsTyp ), $constant_expression, false );
+      }
+  ;
+
+// 6.7.2.2
+%type<dspecs> enum_specifier:
+    ENUM any_identifier declare_enum( $ENUM, $any_identifier )
+      '{' enumerator_list( $declare_enum ) comma_opt '}'   
+      {
+        $$ = New_DSpecs_Tag( DefineEnum( $declare_enum ) );
+      }
+  | ENUM null_str declare_enum( $ENUM, $null_str )
+      '{' enumerator_list( $declare_enum ) comma_opt '}'   
+      {
+        $$ = New_DSpecs_Tag( DefineEnum( $declare_enum ) );
+      }
+  | ENUM any_identifier                                     
+      {
+        $$ = New_DSpecs_Tag( DeclareTag( $ENUM, $any_identifier, false ) );
+      }
+  ;
+
+%type<edesc> declare_enum( $<token>tok, $<str>str ):
+      declare_tag( $tok, $str )
+      {
+        $$ = New_TEnumDesc( $declare_tag );
+      }
+  ;
+
+enumerator_list( $<edesc>edesc ):
+    enumerator( $edesc )
+  | enumerator_list( $edesc ) ',' enumerator( $edesc )
+  | error
+  ;
+
+enumerator( $<edesc>edesc ):
+    enumeration_constant
+      {
+        DeclareEnumerator( $edesc, $enumeration_constant, NULL );
+      }
+  | enumeration_constant '=' constant_expression
+      {
+        DeclareEnumerator( $edesc, $enumeration_constant, $constant_expression );
+      }
+  ;
+
+%type<str> enumeration_constant:
+    any_identifier
+  ;
+
+// 6.7.3
+%type<dspecs> type_qualifier:
+    qual       { $$ = New_DSpecs( $qual ) }
+
+    // EXT: Our extension
+    //
+    // attribute like _far, _near, _cdecl, _pascal, or whatever the
+    // compiler/platform supports are specified this way.
+    //
+  | ATTR '(' any_identifier ')'           
+      {
+        $$ = New_DSpecs_ExtQualAttr( ExtQualAttr_Make( $any_identifier ) );
+      }
+  ;
+
+%type<token> qual:
+    C_CONST
+  | C_RESTRICT
+  | C_VOLATILE
+  ;
+
+
+// 6.7.4
+%type<dspecs> function_specifier:
+    C_INLINE           { $$ = New_DSpecs( $C_INLINE ) }
+  ;
+
+// 6.7.5
+
+%type<sym> declarator( $<typ>typ ): 
+    pointer_opt( $typ ) direct_declarator( $pointer_opt ) 
+      {
+        $$ = $direct_declarator;
+      }
+  ;
+
+%type<typ> direct_declarator_tail( $<typ>typ ):
+    /* empty */
+      {
+        $$ = $typ;
+      }
+  | '[' type_qualifier_list_opt assignment_expression_opt ']' direct_declarator_tail( $typ )
+      {
+        $$ = Type_MakeArray( 
+                $direct_declarator_tail,
+                $type_qualifier_list_opt,
+                $assignment_expression_opt,
+                false
+             );
+      }
+  | '[' C_STATIC type_qualifier_list_opt assignment_expression ']' direct_declarator_tail( $typ )  
+      {
+        $$ = Type_MakeArray( 
+                $direct_declarator_tail,
+                $type_qualifier_list_opt,
+                $assignment_expression,
+                true
+             );
+      }
+  | '[' GenQual_type_qualifier_list C_STATIC assignment_expression ']' direct_declarator_tail( $typ )      
+      {
+        $$ = Type_MakeArray( 
+                $direct_declarator_tail,
+                $GenQual_type_qualifier_list,
+                $assignment_expression,
+                true
+             );
+      }
+  | '[' type_qualifier_list_opt '*' ']' direct_declarator_tail( $typ )
+      {
+        $$ = Type_MakeArray( 
+                $direct_declarator_tail,
+                $type_qualifier_list_opt,
+                Ast( ast_unspecifiedVariableArraySize, &@3 ),
+                false
+             );
+      }
+  | param_scope direct_declarator_tail( $typ )
+      {
+        $$ = Type_MakeFunction( $direct_declarator_tail, $param_scope );
+      }
+  | '('')' direct_declarator_tail( $typ )
+      {
+        $$ = Type_MakeFunction( $direct_declarator_tail, NULL );
+      }
+  |  identifier_list_scope direct_declarator_tail( $typ )
+      {
+        $$ = Type_MakeFunction( $direct_declarator_tail, $identifier_list_scope );
+      }
+  ;
+
+%type<scope> param_scope:
+    '(' 
+      {
+        SymTab_PushNewScope( SCOPE_PARAMS );
+      }
+    parameter_type_list ')' // parameter_type_list takes care of error recovery
+      {
+        $$ = SymTab_PopScope(); // parameter_type_list takes care of error recovery
+      }
+  ;
+
+%type<scope> identifier_list_scope:
+    '(' 
+      {
+        SymTab_PushNewScope( SCOPE_IDENT_LIST );
+      } 
+    identifier_list ')' 
+      {
+        TODO1( "error recovery!" );
+        $$ = SymTab_PopScope();
+      }
+  ;
+
+//--------------------------------------------------------------------------
+// Name         left_bra_CopyTyp
+//
+// The "function" matches a left bracket '(' and returns $<typ>NULL.
+// 
+// The purpose is to avoid parse conflicts in cases when we have to 
+// generate the NULL typ after an open bracket. 
+//
+// The grammar originally has these rules somewhere:
+//
+//   a = '(' declarator ')'
+//   b = '(' declarator2 ')'
+//
+// declarator and declarator2 need a NULL $typ parameter .
+// So, we modify the grammar:
+//   a = '(' Push0(NULL) declarator ')'
+//   b = '(' Push0(NULL) declarator2 ')'
+// This however causes parse conflicts, which leads us to the current:
+//   a = left_bra_NullTyp declarator ')'
+//   b = left_bra_NullTyp declarator2 ')'
+//--------------------------------------------------------------------------
+%type<typ> left_bra_NullTyp:
+    '(' 
+      { $$ = NULL }
+  ;
+
+%type<sym> direct_declarator( $<typ>typ ):
+    any_identifier direct_declarator_tail( $typ ) 
+      { 
+        $$ = New_TSymbol( $any_identifier, $direct_declarator_tail );
+      }
+  | left_bra_NullTyp declarator( $left_bra_NullTyp ) ')' direct_declarator_tail( $typ )
+      {
+        $$ = Symbol_ChainType( $declarator, $direct_declarator_tail );
+      }
+  ;
+
+/*
+  declarator1 doesn't allow a TYPENAME in brackets.
+  It is used only for parameter declaration where a TYPENAME in brackets
+  would mean a function header.
+  To achieve this goal, it redirects to declarator2 after the first bracket.
+*/
+%type<sym> declarator1( $<typ>typ ): 
+    pointer_opt( $typ ) direct_declarator1( $pointer_opt )
+      {
+        $$ = $direct_declarator1;
+      }
+  ;
+
+%type<sym> direct_declarator1( $<typ>typ ):
+    any_identifier direct_declarator_tail( $typ ) 
+      { 
+        $$ = New_TSymbol( $any_identifier, $direct_declarator_tail );
+      }
+  | left_bra_NullTyp declarator2( $left_bra_NullTyp ) ')' direct_declarator_tail( $typ )
+      {
+        $$ = Symbol_ChainType( $declarator2, $direct_declarator_tail );
+      }
+  ;
+
+%type<sym> declarator2( $<typ>typ ): 
+    pointer_opt( $typ ) direct_declarator2( $pointer_opt )
+      {
+        $$ = $direct_declarator2;
+      }
+  ;
+
+%type<sym> direct_declarator2( $<typ>typ ):
+    identifier  direct_declarator_tail( $typ ) 
+      { 
+        $$ = New_TSymbol( $identifier, $direct_declarator_tail );
+      }
+  | left_bra_NullTyp declarator2( $left_bra_NullTyp ) ')'  direct_declarator_tail( $typ ) 
+      {
+        $$ = Symbol_ChainType( $declarator2, $direct_declarator_tail );
+      }
+  ;
+
+
+//--------------------------------------------------------------------------
+// Name         qual_pointer
+//
+// Allocate a qualified pointer and make it point to $typ
+//--------------------------------------------------------------------------
+%type<typ> qual_pointer( $<typ>typ ): 
+    '*' type_qualifier_list_opt 
+      { 
+        $$ = Type_MakePointer( $typ, $type_qualifier_list_opt );
+      }
+  ;
+
+%type<typ> pointer( $<typ>typ ): 
+    qual_pointer( $typ )           
+  | pointer( $typ ) qual_pointer( $pointer )  { $$ = $qual_pointer }
+  ;
+
+%type<typ> pointer_opt( $<typ>typ ): 
+    /*empty*/             { $$ = $typ }
+  | pointer( $typ )               
+  ;
+
+%type<dspecs> type_qualifier_list:
+    type_qualifier
+  | type_qualifier_list type_qualifier   { $$ = DSPECS_COMBINE( $type_qualifier_list, $type_qualifier ) }
+  ;
+
+%type<m_typ> GenQual_type_qualifier_list:
+    type_qualifier_list    { $$ = DSPECS_GENQUAL( $type_qualifier_list ) }
+  ;
+
+
+%type<m_typ> type_qualifier_list_opt:
+    /*empty*/              { $$ = NULL }
+  | GenQual_type_qualifier_list
+  ;
+
+
+// EXT: this is a GNU C extension
+// TODO: We ignore it for now, for the sake of implementing something.
+forward_parameter_decl:
+    /* declaration_specifiers declarator_list ';' */
+  ;
+
+/*
+declarator_list( $<typ>typ ):  
+    declarator 
+  | declarator_list ',' {$$ = $0} declarator
+  ;
+*/
+
+// EXT: forward_parameter_decl is a GNU C extension
+parameter_type_list:
+    forward_parameter_decl parameter_list
+/*  | forward_parameter_decl parameter_list ',' ellipsis_declaration */
+  | error
+  ;
+
+/*
+ellipsis_declaration:
+    ELLIPSIS
+      {
+        DeclareEllipsis();
+      }
+  ;          
+*/
+
+parameter_list:
+    parameter_declaration
+  | parameter_list ',' parameter_declaration
+  ;
+
+parameter_declaration:
+    GenType_declaration_specifiers 
+      GetDSpecsTyp( $GenType_declaration_specifiers )
+      declarator1( $GetDSpecsTyp )         
+      {
+        Declare( $GenType_declaration_specifiers, $declarator1, NULL, false );
+      }
+  | GenType_declaration_specifiers 
+      GetDSpecsTyp( $GenType_declaration_specifiers )
+      abstract_declarator( $GetDSpecsTyp ) 
+      {
+        Declare( $GenType_declaration_specifiers, $abstract_declarator, NULL, false );
+      }
+  | GenType_declaration_specifiers
+      GetDSpecsTyp( $GenType_declaration_specifiers )  
+      {
+        Declare( $GenType_declaration_specifiers, New_TSymbol( NULL, $GetDSpecsTyp ), NULL, false );
+      }
+  | ELLIPSIS
+      {
+        DeclareEllipsis();
+      }
+  ;
+
+
+/*
+  In a identifier list (old-style parameter list)
+  all but the first identifier cannot redefine a typedef. 
+  (6.9.1-6)
+  (If the first one was a typedef then we would assume that this
+  is a new style declaration).
+*/
+identifier_list:
+    identifier                            { DeclareParamIdent( $identifier ); }
+  | identifier_list ',' any_identifier    { DeclareParamIdent( $any_identifier ); }
+  ;
+
+// 6.7.6
+type_name:
+    GenType_specifier_qualifier_list 
+      GetDSpecsTyp( $GenType_specifier_qualifier_list )
+      abstract_declarator( $GetDSpecsTyp ) 
+      {TODO}
+  | GenType_specifier_qualifier_list                                                          
+      {TODO}
+  ;
+
+%type<sym> abstract_declarator( $<typ>typ ): 
+    pointer( $typ )                                                   
+      {
+        $$ = New_TSymbol( NULL, $pointer );
+      }
+  | pointer_opt( $typ ) direct_abstract_declarator( $pointer_opt )    
+      {
+        $$ = $direct_abstract_declarator;
+      }
+  ;
+
+%type<typ> direct_abstract_declarator_tail( $<typ>typ ):
+    '[' assignment_expression_opt ']' direct_abstract_declarator_tail_opt( $typ )
+      {
+        $$ = Type_MakeArray( 
+                $direct_abstract_declarator_tail_opt,
+                NULL,
+                $assignment_expression_opt,
+                false
+             );
+      }      
+  | '[' '*' ']' direct_abstract_declarator_tail_opt( $typ )
+      {
+        $$ = Type_MakeArray( 
+                $direct_abstract_declarator_tail_opt,
+                NULL,
+                Ast( ast_unspecifiedVariableArraySize, &@2 ),
+                false
+             );
+      }      
+  | '(' ')' direct_abstract_declarator_tail_opt( $typ )
+      {
+        $$ = Type_MakeFunction( $direct_abstract_declarator_tail_opt, NULL );
+      }
+  | param_scope direct_abstract_declarator_tail_opt( $typ )
+      {
+        $$ = Type_MakeFunction( $direct_abstract_declarator_tail_opt, $param_scope );
+      }
+  ;
+  
+%type<typ> direct_abstract_declarator_tail_opt( $<typ>typ ):
+    /* empty */
+      {
+        $$ = $typ;
+      }
+  | direct_abstract_declarator_tail( $typ )
+  ;
+
+%type<sym> direct_abstract_declarator( $<typ>typ ):
+    left_bra_NullTyp abstract_declarator( $left_bra_NullTyp ) ')'  
+      direct_abstract_declarator_tail_opt( $typ )
+      {
+        $$ = Symbol_ChainType( $abstract_declarator, $direct_abstract_declarator_tail_opt );
+      }
+  | direct_abstract_declarator_tail( $typ )
+      {
+        $$ = New_TSymbol( NULL, $direct_abstract_declarator_tail );
+      }
+  ;
+
+// 6.7.7
+%type<dspecs> typedef_name:
+    TYPENAME      
+      {
+        $$ = New_DSpecs_Typename( $TYPENAME->type );
+      }
+  ;
+
+// 6.7.8
+initializer:
+    assignment_expression                {TODO;}
+  | '{' initializer_list comma_opt '}'
+  ;
+
+initializer_list:
+    designation_opt initializer
+  | initializer_list ',' designation_opt initializer
+  ;
+
+designation:
+    designator_list '='
+  ;
+
+designation_opt:
+    /*empty*/
+  | designation
+  ;
+
+designator_list:
+    designator
+  | designator_list designator
+  ;
+
+designator:
+    '[' constant_expression ']'
+  | '.' any_identifier
+
+// EXT: GNU C extensions
+  | '[' constant_expression ELLIPSIS constant_expression ']'
+//TODO(ifpossible): | any_identifier ':'
+  ;
+
+/////////////////////////////////////////////////////////////////
+//
+//  A.2.3 Statements
+//
+
+
+// 6.8
+statement:
+    labeled_statement
+  | compound_statement
+  | expression_statement
+  | selection_statement
+  | iteration_statement
+  | jump_statement
+  ;
+
+// 6.8.1
+labeled_statement:
+    any_identifier ':' statement            {TODO}
+  | CASE constant_expression ':' statement
+  | DEFAULT ':' statement
+
+// GNU C Extension
+  | CASE constant_expression ELLIPSIS constant_expression ':' statement
+  ;
+
+// 6.8.2
+compound_statement:
+    '{' 
+      {
+        SymTab_PushNewScope( SCOPE_BLOCK );
+      }
+    declare_labels_list_opt block_item_list_opt '}'
+      {
+        SymTab_PopScope();
+      }
+  ;
+
+// Same as 'compound_statement', but doesn't push a new scope,
+// since the scope, containing the parameters, was pushed at the
+// function definition (by DeclareFunctionDefinition() ).
+//
+function_compound_statement:
+    '{' 
+    declare_labels_list_opt block_item_list_opt '}'
+      {
+        SymTab_PopScope();
+      }
+  ;
+
+// EXT: This is a GNU C extension
+//
+declare_labels_list:
+    declare_labels ';'
+  | declare_labels_list declare_labels ';'
+  ;
+
+declare_labels_list_opt:
+    /*empty*/
+  | declare_labels_list
+  ;
+
+declare_labels:
+    LABEL any_identifier
+  | declare_labels ',' any_identifier
+  ;
+
+block_item_list:
+    block_item
+  | block_item_list block_item
+  ;
+
+block_item_list_opt:
+    /*empty*/
+  | block_item_list
+  ;
+
+block_item:
+    declaration
+  | statement
+  ;
+
+// 6.8.3
+expression_statement:
+    expression_opt ';'  {Stmt_Expression( $expression_opt )}
+  ;
+
+// 6.8.4
+selection_statement:
+    IF '(' expression ')' statement                  %prec IF
+  | IF '(' expression ')' statement ELSE statement   %prec ELSE
+  | SWITCH '(' expression ')' statement
+  ;
+
+// 6.8.5
+iteration_statement:
+    WHILE '(' expression ')' statement
+  | DO statement WHILE '(' expression ')' ';'
+  | FOR '(' expression_opt ';' expression_opt ';' expression_opt ')' statement
+  | FOR '(' declaration expression_opt ';' expression_opt ')' statement
+  ;
+
+// 6.8.6
+jump_statement:
+    GOTO any_identifier ';'
+// EXT: GNU C extension
+  | GOTO '*' cast_expression ';'
+  
+  | CONTINUE ';'
+  | BREAK ';'
+  | RETURN expression_opt ';'
+  ;
+
+
+/////////////////////////////////////////////////////////////////
+//
+//  A.2.4 External definitions
+//
+
+// 6.9
+translation_unit:
+    external_declaration 
+      ensure_file_scope
+      garbage_collect
+  | translation_unit external_declaration
+      ensure_file_scope
+      garbage_collect
+  ;
+
+external_declaration:
+    function_definition
+  | declaration
+  | error
+
+// EXT: Non-ANSI extension: allow an empty file scope statement
+  | ';'  { CompilerStrictError( "Empty statement at file scope" ); }
+  ;
+
+// 6.9.1
+function_definition:
+    GenType_declaration_specifiers 
+      GetDSpecsTyp( $GenType_declaration_specifiers )
+      declarator( $GetDSpecsTyp ) 
+      {
+        DeclareFunctionDefinition( 
+          $GenType_declaration_specifiers, 
+          $GetDSpecsTyp,
+          $declarator,
+          NULL
+        );
+      }
+      function_compound_statement 
+  | GenType_declaration_specifiers 
+      GetDSpecsTyp( $GenType_declaration_specifiers )
+      declarator( $GetDSpecsTyp ) 
+      declaration_list_scope
+      {
+        DeclareFunctionDefinition( 
+          $GenType_declaration_specifiers, 
+          $GetDSpecsTyp,
+          $declarator,
+          $declaration_list_scope
+        );
+      }
+      function_compound_statement 
+  ;
+
+%type<scope> declaration_list_scope:
+      {
+        SymTab_PushNewScope( SCOPE_PARAMS );
+      }
+    declaration_list
+      {
+        // error recovery is handled in declaration_list
+        $$ = SymTab_PopScope();  
+      }
+  ;
+
+declaration_list:
+    declaration
+  | declaration_list declaration
+  | error
+  ;
+%%
+
+// DSpecs manipulation routines, with explicitly freeing the no-longer used 
+// argument to conserve memory. 
+// Note: we need to zero the parser stack location that holds the 
+// freed value.
+
+//--------------------------------------------------------------------------
+// Name         DSpecs_Combine_Prim
+//
+// 
+//--------------------------------------------------------------------------
+static TDeclSpecs * DSpecs_Combine_Prim ( TDeclSpecs ** pa, TDeclSpecs ** pb )
+{
+  TDeclSpecs * res = DSpecs_Add( *pa, *pb );
+
+  if (res != *pa)
+    GC_DELETE( *pa );
+  if (res != *pb)
+    GC_DELETE( *pb );
+
+  return res;
+};
+
+//--------------------------------------------------------------------------
+// Name         DSpecs_GenQual_Prim 
+//
+// 
+//--------------------------------------------------------------------------
+static TQualNode * DSpecs_GenQual_Prim ( TDeclSpecs ** pds )
+{
+  TQualNode * res = DSpecs_GenQual( *pds );
+  GC_DELETE( *pds );
+  return res;
+}
+
+//--------------------------------------------------------------------------
+// Name         yy_mark 
+//
+// Mark the contents of a semantic stack entry (YYSTYPE).
+//
+// _typ_ identifies the type of the entry, corresponing to a member
+// of the declared %union. The possible values of _typ_ (YYST_xxx) are 
+// generated automatically by PREBIS and are defined in c.tab.inc
+//--------------------------------------------------------------------------
+static void yy_mark ( unsigned typ, const YYSTYPE * pval )
+{
+  MAKE_SURE( YYST__LAST == 11 );
+
+  switch (typ)
+  {
+  case YYST_AST:
+    GC_MARK( pval->ast ); break;
+
+  case YYST_STR:
+    GC_MARK( pval->str ); break;
+
+  case YYST_TOKEN:
+    break;
+
+  case YYST_SYM:
+    GC_MARK( pval->sym ); break;
+
+  case YYST_SCOPE:
+    GC_MARK( pval->scope ); break;
+
+  case YYST_TYP:
+    GC_MARK( pval->typ ); break;
+
+  case YYST_DSPECS:
+    GC_MARK( pval->dspecs ); break;
+
+  case YYST_TNODE:
+    GC_MARK( pval->tnode ); break;
+
+  case YYST_EDESC:
+    GC_MARK( pval->edesc ); break;
+
+  case YYST_M_TYP:
+    GC_MARK( pval->m_typ ); break;
+
+  default:
+    ASSERT( 0 );
+  }
+}
+
+
+#ifndef TEST_YYPARSE
+
+void yyerror ( char * err )
+{
+  CompilerError( "at '%s' : %s", yytext, err );
+};
+
+#else
+
+void yyerror ( char * err )
+{
+  printf( "\n\n **** error: %s\n\n", err );
+};
+
+int yylex ( void )
+{
+  int res;
+  char buf[32];
+  for(;;)
+  {
+    printf( "Enter code:" );
+    gets( buf );
+
+    if (isdigit(buf[0]))
+    {
+      if (sscanf( buf, "%d", &res ) != 1)
+        printf( "Error! Try again.\n" );
+      else
+        return res;
+    }
+    else
+    if (isalpha( buf[0] ))
+    {
+      int i;
+      for ( i = 0; yytname[i] != NULL; ++i )
+      {
+        if (_stricmp( buf, yytname[i] ) == 0)
+          return i + 255;
+      }
+      printf( "Undefined token! Try again.\n" );
+    }
+    else
+      return buf[0];
+  }
+};
+
+int main ( int argc, char ** argv )
+{
+#if YYDEBUG
+  yydebug = argc == 2;
+#endif 
+  yyparse();
+
+  return 0;
+};
+#endif // TEST_YYPARSE
